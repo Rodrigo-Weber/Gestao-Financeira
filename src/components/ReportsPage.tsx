@@ -1,16 +1,20 @@
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { FileDown, FileSpreadsheet, FileText, Sheet } from "lucide-react";
 import type { FinanceData } from "../types";
-import { calculateSummary, categorySpend } from "../lib/finance";
+import { calculateSummary, categorySpend, type DateRange } from "../lib/finance";
 import { exportCsv, exportExcel, exportPdf } from "../lib/reports";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-export function ReportsPage({ data, month }: { data: FinanceData; month: Date }) {
+export function ReportsPage({ data, month, range }: { data: FinanceData; month: Date; range?: DateRange }) {
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
-  const scopedData = { ...data, transactions: data.transactions.filter((item) => item.dueDate.startsWith(monthKey)), budgets: data.budgets.filter((item) => item.month === monthKey) };
-  const summary = calculateSummary(data, month);
-  const categories = categorySpend(data, month);
+  const scopedData = {
+    ...data,
+    transactions: data.transactions.filter((item) => range ? item.dueDate >= range.start && item.dueDate <= range.end : item.dueDate.startsWith(monthKey)),
+    budgets: data.budgets.filter((item) => range ? item.month >= range.start.slice(0, 7) && item.month <= range.end.slice(0, 7) : item.month === monthKey),
+  };
+  const summary = calculateSummary(data, month, range);
+  const categories = categorySpend(data, month, range);
   const incomeTotal = summary.realizedIncome + summary.pendingIncome;
   const expenseTotal = summary.realizedExpense + summary.pendingExpense;
   const comparison = [
@@ -24,10 +28,10 @@ export function ReportsPage({ data, month }: { data: FinanceData; month: Date })
   ].filter((item) => item.value > 0);
   const balanceRatio = incomeTotal ? Math.round((incomeTotal - expenseTotal) / incomeTotal * 100) : 0;
   return <div className="page-stack"><section className="page-title"><div><span className="eyebrow">Leve seus dados com você</span><h1>Relatórios</h1><p>Exporte um retrato claro e completo da sua vida financeira.</p></div></section>
-    <section className="report-summary"><div><small>Saldo projetado</small><strong>{brl.format(summary.projectedBalance)}</strong></div><div><small>Receitas do mês</small><strong>{brl.format(summary.realizedIncome + summary.pendingIncome)}</strong></div><div><small>Despesas do mês</small><strong>{brl.format(summary.realizedExpense + summary.pendingExpense)}</strong></div><div><small>Dívidas em aberto</small><strong>{brl.format(data.debts.reduce((sum, item) => sum + item.outstandingBalance, 0))}</strong></div></section>
+    <section className="report-summary"><div><small>Saldo projetado</small><strong>{brl.format(summary.projectedBalance)}</strong></div><div><small>Receitas do período</small><strong>{brl.format(summary.realizedIncome + summary.pendingIncome)}</strong></div><div><small>Despesas do período</small><strong>{brl.format(summary.realizedExpense + summary.pendingExpense)}</strong></div><div><small>Dívidas em aberto</small><strong>{brl.format(data.debts.reduce((sum, item) => sum + item.outstandingBalance, 0))}</strong></div></section>
     <section className="report-visual-grid">
       <article className="panel report-chart-card">
-        <div className="panel-heading"><div><span className="eyebrow">Comparativo mensal</span><h2>Receitas e despesas</h2></div><span className={`chart-insight ${balanceRatio < 0 ? "negative" : ""}`}>{balanceRatio >= 0 ? "+" : ""}{balanceRatio}% de margem</span></div>
+        <div className="panel-heading"><div><span className="eyebrow">Comparativo do período</span><h2>Receitas e despesas</h2></div><span className={`chart-insight ${balanceRatio < 0 ? "negative" : ""}`}>{balanceRatio >= 0 ? "+" : ""}{balanceRatio}% de margem</span></div>
         <div className="report-chart">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={comparison} margin={{ left: -10, right: 8, top: 18 }}>
@@ -74,8 +78,8 @@ export function ReportsPage({ data, month }: { data: FinanceData; month: Date })
     })}</div></article>
     <div className="section-heading"><div><span className="eyebrow">Seus dados, seu formato</span><h2>Exportações</h2></div><p>Arquivos prontos para análise, arquivo pessoal ou compartilhamento.</p></div>
     <section className="export-grid">
-      <article className="export-card"><span className="export-icon pdf"><FileText size={27} /></span><div><h2>Relatório visual</h2><p>Resumo mensal pronto para ler, guardar ou compartilhar.</p><ul><li>Fluxo realizado e projetado</li><li>Principais categorias</li><li>Últimas transações</li></ul></div><button className="primary-btn" onClick={() => exportPdf(scopedData, month)}><FileDown size={18} /> Exportar PDF</button></article>
-      <article className="export-card"><span className="export-icon excel"><FileSpreadsheet size={27} /></span><div><h2>Planilha completa</h2><p>Abas separadas, valores numéricos e totais para análise.</p><ul><li>Resumo consolidado</li><li>Todas as transações</li><li>Dívidas e empréstimos</li></ul></div><button className="primary-btn" onClick={() => exportExcel(scopedData, month)}><FileDown size={18} /> Exportar Excel</button></article>
+      <article className="export-card"><span className="export-icon pdf"><FileText size={27} /></span><div><h2>Relatório visual</h2><p>Resumo do período pronto para ler, guardar ou compartilhar.</p><ul><li>Fluxo realizado e projetado</li><li>Principais categorias</li><li>Últimas transações</li></ul></div><button className="primary-btn" onClick={() => exportPdf(scopedData, month, range)}><FileDown size={18} /> Exportar PDF</button></article>
+      <article className="export-card"><span className="export-icon excel"><FileSpreadsheet size={27} /></span><div><h2>Planilha completa</h2><p>Abas separadas, valores numéricos e totais para análise.</p><ul><li>Resumo consolidado</li><li>Todas as transações</li><li>Dívidas e empréstimos</li></ul></div><button className="primary-btn" onClick={() => exportExcel(scopedData, month, range)}><FileDown size={18} /> Exportar Excel</button></article>
       <article className="export-card"><span className="export-icon csv"><Sheet size={27} /></span><div><h2>Dados em CSV</h2><p>Formato universal para importar em qualquer ferramenta.</p><ul><li>Codificação UTF-8</li><li>Compatível com Excel</li><li>Valores preservados</li></ul></div><button className="secondary-btn" onClick={() => exportCsv(scopedData)}><FileDown size={18} /> Exportar CSV</button></article>
     </section>
   </div>;

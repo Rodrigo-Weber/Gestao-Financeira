@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, CreditCard, Gauge, PiggyBank, Target, TrendingDown, Wallet, WalletCards } from "lucide-react";
 import type { FinanceData } from "../types";
-import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, categorySpend, financialAlerts, monthTransactions } from "../lib/finance";
+import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, categorySpend, financialAlerts, monthTransactions, type DateRange } from "../lib/finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const short = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
@@ -15,12 +15,15 @@ function MetricCard({ label, value, helper, tone, icon }: { label: string; value
   </article>;
 }
 
-export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: FinanceData; month: Date; userName: string; onAdd: () => void; onNavigate: (page: string) => void }) {
-  const summary = useMemo(() => calculateSummary(data, month), [data, month]);
-  const categories = useMemo(() => categorySpend(data, month), [data, month]);
-  const flow = useMemo(() => cashFlowSeries(data, month), [data, month]);
+export function Dashboard({ data, month, range, userName, onAdd, onNavigate }: { data: FinanceData; month: Date; range?: DateRange; userName: string; onAdd: () => void; onNavigate: (page: string) => void }) {
+  const summary = useMemo(() => calculateSummary(data, month, range), [data, month, range?.start, range?.end]);
+  const categories = useMemo(() => categorySpend(data, month, range), [data, month, range?.start, range?.end]);
+  const flow = useMemo(() => cashFlowSeries(data, month, range), [data, month, range?.start, range?.end]);
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
-  const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const monthLabel = range
+    ? `${new Date(`${range.start}T12:00:00`).toLocaleDateString("pt-BR")} a ${new Date(`${range.end}T12:00:00`).toLocaleDateString("pt-BR")}`
+    : month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const matchesPeriod = (date: string) => range ? date >= range.start && date <= range.end : date.startsWith(monthKey);
   const today = new Date();
   const isCurrentMonth = today.getFullYear() === month.getFullYear() && today.getMonth() === month.getMonth();
   const monthIsPast = month.getFullYear() < today.getFullYear() || (month.getFullYear() === today.getFullYear() && month.getMonth() < today.getMonth());
@@ -32,18 +35,20 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
   const guide = useMemo(() => calculateSpendingGuide(data, new Date(referenceTime)), [data, referenceTime]);
   const alerts = useMemo(() => financialAlerts(data, month, new Date(referenceTime)), [data, month, referenceTime]);
   const guideBoundary = new Date(`${guide.boundaryDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
-  const upcoming = data.transactions.filter((item) => item.dueDate.startsWith(monthKey) && item.status !== "paid" && item.status !== "cancelled").sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+  const upcoming = data.transactions.filter((item) => matchesPeriod(item.dueDate) && item.status !== "paid" && item.status !== "cancelled").sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
   const categoryTotal = categories.reduce((sum, item) => sum + item.value, 0);
   const card = data.cards[0];
-  const cardUsed = data.transactions.filter((item) => item.cardId === card?.id && item.kind === "card_purchase" && item.competenceDate.startsWith(monthKey)).reduce((sum, item) => sum + item.amount, 0);
-  const monthItems = useMemo(() => monthTransactions(data.transactions, month), [data.transactions, month]);
+  const cardUsed = data.transactions.filter((item) => item.cardId === card?.id && item.kind === "card_purchase" && matchesPeriod(item.competenceDate)).reduce((sum, item) => sum + item.amount, 0);
+  const monthItems = useMemo(() => monthTransactions(data.transactions, month, range), [data.transactions, month, range?.start, range?.end]);
   const totalIncome = summary.realizedIncome + summary.pendingIncome;
   const totalExpense = summary.realizedExpense + summary.pendingExpense;
   const savingsRate = totalIncome ? Math.round((totalIncome - totalExpense) / totalIncome * 100) : 0;
-  const budgetOverview = data.budgets.filter((item) => item.month === monthKey).map((budget) => {
-    const category = data.categories.find((item) => item.id === budget.categoryId);
+  const periodBudgets = data.budgets.filter((item) => range ? item.month >= range.start.slice(0, 7) && item.month <= range.end.slice(0, 7) : item.month === monthKey);
+  const groupedBudgets = [...periodBudgets.reduce((items, budget) => items.set(budget.categoryId, (items.get(budget.categoryId) ?? 0) + budget.limit), new Map<string, number>())];
+  const budgetOverview = groupedBudgets.map(([categoryId, limit]) => {
+    const category = data.categories.find((item) => item.id === categoryId);
     const spent = categories.find((item) => item.name === category?.name)?.value ?? 0;
-    return { name: category?.name ?? "Categoria", color: category?.color ?? "#8c9792", spent, limit: budget.limit, percent: budget.limit ? Math.round(spent / budget.limit * 100) : 0 };
+    return { name: category?.name ?? "Categoria", color: category?.color ?? "#8c9792", spent, limit, percent: limit ? Math.round(spent / limit * 100) : 0 };
   }).sort((a, b) => b.percent - a.percent).slice(0, 4);
   const accountAllocation = data.accounts.map((account) => ({
     name: account.name,
@@ -187,7 +192,7 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
         <div className="panel-heading"><div><span className="eyebrow">Fique de olho</span><h2>Próximos vencimentos</h2></div><button className="text-action" onClick={() => onNavigate("transactions")}>Ver todos <ChevronRight size={15} /></button></div>
         <div className="upcoming-list">{upcoming.map((item) => {
           const day = new Date(`${item.dueDate}T12:00:00`).getDate();
-          return <div className="upcoming-item" key={item.id}><div className="date-box"><strong>{day}</strong><small>{month.toLocaleDateString("pt-BR", { month: "short" }).replace(".", "").toUpperCase()}</small></div><div className="upcoming-info"><strong>{item.description}</strong><small>{item.kind === "invoice_payment" ? "Fatura de cartão" : item.kind === "debt_payment" ? "Dívida" : "Conta recorrente"}</small></div><strong>{brl.format(item.amount)}</strong><span className="status-pill pending"><CalendarClock size={13} /> Pendente</span></div>;
+          return <div className="upcoming-item" key={item.id}><div className="date-box"><strong>{day}</strong><small>{new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR", { month: "short" }).replace(".", "").toUpperCase()}</small></div><div className="upcoming-info"><strong>{item.description}</strong><small>{item.kind === "invoice_payment" ? "Fatura de cartão" : item.kind === "debt_payment" ? "Dívida" : "Conta recorrente"}</small></div><strong>{brl.format(item.amount)}</strong><span className="status-pill pending"><CalendarClock size={13} /> Pendente</span></div>;
         })}{!upcoming.length && <div className="empty-state"><CheckCircle2 size={28} /><strong>Tudo em dia!</strong><span>Nenhuma conta pendente.</span></div>}</div>
       </article>
 

@@ -1,17 +1,24 @@
-import { addMonths, differenceInCalendarDays, endOfMonth, format, isAfter, isBefore, isEqual, parseISO, startOfDay, startOfMonth, subDays } from "date-fns";
+import { addMonths, differenceInCalendarDays, eachDayOfInterval, endOfMonth, format, isAfter, isBefore, isEqual, parseISO, startOfDay, startOfMonth, subDays } from "date-fns";
 import type { CreditCard, FinanceData, PaymentMethod, Transaction } from "../types";
+
+export interface DateRange {
+  start: string;
+  end: string;
+}
 
 const inRange = (date: string, start: Date, end: Date) => {
   const value = parseISO(date);
   return (isAfter(value, start) || isEqual(value, start)) && (isBefore(value, end) || isEqual(value, end));
 };
 
-export function monthTransactions(transactions: Transaction[], month: Date) {
-  return transactions.filter((item) => inRange(item.dueDate, startOfMonth(month), endOfMonth(month)) && item.status !== "cancelled");
+export function monthTransactions(transactions: Transaction[], month: Date, range?: DateRange) {
+  const start = range ? parseISO(range.start) : startOfMonth(month);
+  const end = range ? parseISO(range.end) : endOfMonth(month);
+  return transactions.filter((item) => inRange(item.dueDate, start, end) && item.status !== "cancelled");
 }
 
-export function calculateSummary(data: FinanceData, month = new Date()) {
-  const monthItems = monthTransactions(data.transactions, month);
+export function calculateSummary(data: FinanceData, month = new Date(), range?: DateRange) {
+  const monthItems = monthTransactions(data.transactions, month, range);
   const cashItems = monthItems.filter((item) => item.kind !== "card_purchase" && item.kind !== "transfer");
   const realizedIncome = cashItems.filter((item) => item.kind === "income" && item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
   const realizedExpense = cashItems.filter((item) => item.kind !== "income" && item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
@@ -19,7 +26,10 @@ export function calculateSummary(data: FinanceData, month = new Date()) {
   const pendingExpense = cashItems.filter((item) => item.kind !== "income" && item.status !== "paid").reduce((sum, item) => sum + item.amount, 0);
   const openingBalance = data.accounts.reduce((sum, account) => sum + account.initialBalance, 0);
   const today = new Date();
-  const cutoff = month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth() ? today : endOfMonth(month);
+  const rangeEnd = range ? parseISO(range.end) : endOfMonth(month);
+  const cutoff = range
+    ? (isAfter(rangeEnd, today) ? today : rangeEnd)
+    : month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth() ? today : endOfMonth(month);
   const historicalPaid = data.transactions.filter((item) => {
     if (item.status !== "paid" || item.kind === "card_purchase" || item.kind === "transfer") return false;
     return !isAfter(parseISO(item.paidDate ?? item.dueDate), cutoff);
@@ -52,13 +62,15 @@ export function accountBalance(data: FinanceData, accountId: string, cutoff = ne
   }, account.initialBalance);
 }
 
-export function categorySpend(data: FinanceData, month = new Date()) {
+export function categorySpend(data: FinanceData, month = new Date(), range?: DateRange) {
+  const start = range ? parseISO(range.start) : startOfMonth(month);
+  const end = range ? parseISO(range.end) : endOfMonth(month);
   const expenses = data.transactions.filter((item) =>
     item.kind !== "income" &&
     item.kind !== "transfer" &&
     item.kind !== "invoice_payment" &&
     item.status !== "cancelled" &&
-    inRange(item.competenceDate, startOfMonth(month), endOfMonth(month)),
+    inRange(item.competenceDate, start, end),
   );
   return data.categories
     .filter((category) => category.kind === "expense")
@@ -71,16 +83,22 @@ export function categorySpend(data: FinanceData, month = new Date()) {
     .sort((a, b) => b.value - a.value);
 }
 
-export function cashFlowSeries(data: FinanceData, month = new Date()) {
-  const items = monthTransactions(data.transactions, month).filter((item) => item.kind !== "card_purchase" && item.kind !== "transfer");
-  const openingBalance = data.accounts.reduce((sum, account) => sum + accountBalance(data, account.id, subDays(startOfMonth(month), 1)), 0);
-  return [...new Set([1, 5, 10, 15, 20, 25, endOfMonth(month).getDate()])].sort((a, b) => a - b).map((day) => {
-    const cutoff = new Date(month.getFullYear(), month.getMonth(), day);
+export function cashFlowSeries(data: FinanceData, month = new Date(), range?: DateRange) {
+  const periodStart = range ? parseISO(range.start) : startOfMonth(month);
+  const periodEnd = range ? parseISO(range.end) : endOfMonth(month);
+  const items = monthTransactions(data.transactions, month, range).filter((item) => item.kind !== "card_purchase" && item.kind !== "transfer");
+  const openingBalance = data.accounts.reduce((sum, account) => sum + accountBalance(data, account.id, subDays(periodStart, 1)), 0);
+  const allDays = range
+    ? eachDayOfInterval({ start: periodStart, end: periodEnd })
+    : [...new Set([1, 5, 10, 15, 20, 25, endOfMonth(month).getDate()])].sort((a, b) => a - b).map((day) => new Date(month.getFullYear(), month.getMonth(), day));
+  const step = Math.max(1, Math.ceil(allDays.length / 8));
+  const points = range ? allDays.filter((_, index) => index % step === 0 || index === allDays.length - 1) : allDays;
+  return points.map((cutoff) => {
     const scoped = items.filter((item) => !isAfter(parseISO(item.dueDate), cutoff));
     const entradas = scoped.filter((item) => item.kind === "income").reduce((sum, item) => sum + item.amount, 0);
     const saidas = scoped.filter((item) => item.kind !== "income").reduce((sum, item) => sum + item.amount, 0);
     return {
-      day: String(day).padStart(2, "0"),
+      day: format(cutoff, range ? "dd/MM" : "dd"),
       entradas,
       saidas,
       saldo: openingBalance + entradas - saidas,

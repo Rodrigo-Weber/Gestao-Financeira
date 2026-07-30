@@ -1,19 +1,21 @@
 import { useMemo, useState } from "react";
 import { CheckCircle2, CircleDollarSign, Filter, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FinanceData, Transaction } from "../types";
+import type { DateRange } from "../lib/finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const status: Record<string, string> = { paid: "Pago", pending: "Pendente", overdue: "Atrasado", cancelled: "Cancelado" };
 const paymentMethod: Record<string, string> = { pix: "PIX", debit: "Débito", credit: "Crédito" };
 
-export function TransactionsPage({ data, month, onAdd, onMarkPaid, onEdit, onDelete }: { data: FinanceData; month: string; onAdd: () => void; onMarkPaid: (id: string) => void; onEdit: (item: Transaction) => void; onDelete: (item: Transaction) => void }) {
+export function TransactionsPage({ data, month, range, onAdd, onMarkPaid, onEdit, onDelete }: { data: FinanceData; month: string; range?: DateRange; onAdd: () => void; onMarkPaid: (id: string) => void; onEdit: (item: Transaction) => void; onDelete: (item: Transaction) => void }) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
   const items = useMemo(() => data.transactions.filter((item) => {
     const matchesQuery = item.description.toLowerCase().includes(query.toLowerCase());
     const matchesFilter = filter === "all" || item.status === filter;
-    return item.dueDate.startsWith(month) && matchesQuery && matchesFilter;
-  }).sort((a, b) => b.dueDate.localeCompare(a.dueDate)), [data.transactions, month, query, filter]);
+    const matchesPeriod = range ? item.dueDate >= range.start && item.dueDate <= range.end : item.dueDate.startsWith(month);
+    return matchesPeriod && matchesQuery && matchesFilter;
+  }).sort((a, b) => b.dueDate.localeCompare(a.dueDate)), [data.transactions, month, range?.start, range?.end, query, filter]);
 
   return <div className="page-stack">
     <section className="page-title"><div><span className="eyebrow">Histórico completo</span><h1>Transações</h1><p>Encontre, filtre e acompanhe cada movimento do seu dinheiro.</p></div><button className="primary-btn" onClick={onAdd}><Plus size={18} /> Novo lançamento</button></section>

@@ -1,14 +1,14 @@
 import { useMemo, useState } from "react";
 import { CalendarDays, CreditCard, Landmark, Plus, Sparkles, TrendingDown, UserRound } from "lucide-react";
 import type { FinanceData } from "../types";
-import { simulateDebtPayoff } from "../lib/finance";
+import { simulateDebtPayoff, type DateRange } from "../lib/finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
-export function CardsPage({ data, month, onAdd }: { data: FinanceData; month: string; onAdd: () => void }) {
+export function CardsPage({ data, month, range, onAdd }: { data: FinanceData; month: string; range?: DateRange; onAdd: () => void }) {
   return <div className="page-stack"><section className="page-title"><div><span className="eyebrow">Seus limites</span><h1>Cartões</h1><p>Acompanhe faturas e utilização sem contar gastos duas vezes.</p></div><button className="primary-btn" onClick={onAdd}><Plus size={18} /> Novo cartão</button></section>
     <section className="cards-grid">{data.cards.map((card) => {
-      const used = data.transactions.filter((item) => item.cardId === card.id && item.kind === "card_purchase" && item.competenceDate.startsWith(month)).reduce((sum, item) => sum + item.amount, 0);
+      const used = data.transactions.filter((item) => item.cardId === card.id && item.kind === "card_purchase" && (range ? item.competenceDate >= range.start && item.competenceDate <= range.end : item.competenceDate.startsWith(month))).reduce((sum, item) => sum + item.amount, 0);
       return <article className="card-detail" key={card.id} style={{ "--card-color": card.color } as React.CSSProperties}><div className="physical-card"><div><span>Weber</span><CreditCard size={25} /></div><strong>•••• •••• •••• {card.lastDigits}</strong><div><small>{card.name}</small><small>{card.brand}</small></div></div><div className="card-stats"><div><small>Fatura atual</small><strong>{brl.format(used)}</strong></div><div><small>Limite disponível</small><strong>{brl.format(card.limit - used)}</strong></div><div className="progress large"><span style={{ width: `${Math.min(100, used / card.limit * 100)}%` }} /></div><div className="card-dates"><span><CalendarDays size={16} /> Fecha dia <strong>{card.closingDay}</strong></span><span>Pagamento dia <strong>{card.dueDay}</strong></span></div></div></article>;
     })}</section></div>;
 }

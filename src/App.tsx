@@ -14,6 +14,7 @@ import { EntityModal, type EntityKind, type EntityPayload } from "./components/E
 import { SettingsPage } from "./components/SettingsPage";
 import { TransactionDeleteModal, TransactionEditModal, type TransactionEditValues } from "./components/TransactionActionModals";
 import type { AssetInput, FundInput, GoalInput } from "./components/FinancialHealthPages";
+import { PeriodSelector, type PeriodMode } from "./components/PeriodSelector";
 import { demoData } from "./lib/demoData";
 import { accountBalance, createInstallments } from "./lib/finance";
 import { apiFetch } from "./lib/api";
@@ -47,6 +48,9 @@ export default function App() {
   const [aiInstructions, setAiInstructions] = useState("");
   const [page, setPage] = useState<Page>("dashboard");
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [periodMode, setPeriodMode] = useState<PeriodMode>("month");
+  const [rangeStart, setRangeStart] = useState(`${new Date().toISOString().slice(0, 7)}-01`);
+  const [rangeEnd, setRangeEnd] = useState(new Date().toISOString().slice(0, 10));
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -484,6 +488,13 @@ export default function App() {
     });
   }
 
+  function changeRange(start: string, end: string) {
+    if (!start || !end) return;
+    setRangeStart(start);
+    setRangeEnd(end);
+    setSelectedMonth(end.slice(0, 7));
+  }
+
   async function signOut() {
     if (supabase && session) await supabase.auth.signOut();
     if (isSupabaseConfigured) {
@@ -509,19 +520,19 @@ export default function App() {
     <main className="main-area">
       <header className="topbar">
         <button className="icon-btn mobile-only" onClick={() => setMenuOpen(true)}><Menu size={21} /></button>
-        <label className="month-picker"><span>Período</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} /></label>
+        <PeriodSelector mode={periodMode} month={selectedMonth} start={rangeStart} end={rangeEnd} onModeChange={setPeriodMode} onMonthChange={setSelectedMonth} onRangeChange={changeRange} />
         <div className="topbar-actions"><button className="search-trigger" onClick={() => setPage("transactions")}><Search size={18} /><span>Buscar transação...</span><kbd>Ctrl K</kbd></button>{demo && <span className="demo-badge">Demonstração</span>}<button className="icon-btn" title={hideValues ? "Mostrar valores" : "Ocultar valores"} onClick={toggleValues}>{hideValues ? <EyeOff size={19} /> : <Eye size={19} />}</button><button className="icon-btn notification" title="Ver pendências" onClick={() => setPage("transactions")}><Bell size={19} /><i /></button><button className="ai-button" onClick={() => setChatOpen(true)}><SparkIcon /><span>Weber IA</span></button></div>
       </header>
       <div className={`page-content ${loadingData ? "loading" : ""}`}>
         {page === "today" && <Suspense fallback={<div className="route-loading">Preparando seu dia...</div>}><TodayPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onNavigate={(value) => setPage(value as Page)} /></Suspense>}
-        {page === "dashboard" && <Dashboard data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} userName={displayName} onAdd={() => { setDraft(null); setAddOpen(true); }} onNavigate={(value) => setPage(value as Page)} />}
+        {page === "dashboard" && <Dashboard data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} userName={displayName} onAdd={() => { setDraft(null); setAddOpen(true); }} onNavigate={(value) => setPage(value as Page)} />}
         {page === "planning" && <Suspense fallback={<div className="route-loading">Calculando seu plano...</div>}><PlanningPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onAddGoal={addGoal} onAddFund={addAnnualFund} /></Suspense>}
         {page === "patrimony" && <Suspense fallback={<div className="route-loading">Consolidando patrimônio...</div>}><PatrimonyPage data={data} onAddAsset={addAsset} /></Suspense>}
-        {page === "transactions" && <TransactionsPage data={data} month={selectedMonth} onAdd={() => { setDraft(null); setAddOpen(true); }} onMarkPaid={markPaid} onEdit={(item) => openTransactionEdit(item)} onDelete={setDeletingTransaction} />}
+        {page === "transactions" && <TransactionsPage data={data} month={selectedMonth} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} onAdd={() => { setDraft(null); setAddOpen(true); }} onMarkPaid={markPaid} onEdit={(item) => openTransactionEdit(item)} onDelete={setDeletingTransaction} />}
         {page === "accounts" && <AccountsPage data={data} onAdd={() => setEntityModal("account")} onAdjust={setAdjustingAccount} />}
-        {page === "cards" && <CardsPage data={data} month={selectedMonth} onAdd={() => setEntityModal("card")} />}
+        {page === "cards" && <CardsPage data={data} month={selectedMonth} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} onAdd={() => setEntityModal("card")} />}
         {page === "debts" && <DebtsPage data={data} onAdd={() => setEntityModal("debt")} />}
-        {page === "reports" && <Suspense fallback={<div className="route-loading">Preparando relatórios...</div>}><ReportsPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} /></Suspense>}
+        {page === "reports" && <Suspense fallback={<div className="route-loading">Preparando relatórios...</div>}><ReportsPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} /></Suspense>}
         {page === "settings" && <SettingsPage data={data} displayName={displayName} aiInstructions={aiInstructions} email={session?.user.email} demo={demo} month={selectedMonth} onSaveProfile={saveProfile} onAddCategory={addCategory} onDeleteCategory={deleteCategory} onClassifyCategory={classifyCategory} onSaveBudgets={saveBudgets} onDataChanged={loadFinanceData} onSignOut={signOut} />}
       </div>
     </main>

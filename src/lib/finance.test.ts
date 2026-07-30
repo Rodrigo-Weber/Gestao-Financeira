@@ -24,6 +24,22 @@ describe("financial calculations", () => {
     expect(summary.projectedBalance).toBe(2200);
   });
 
+  it("filters summaries across a custom date range", () => {
+    const data: FinanceData = {
+      ...base,
+      transactions: [
+        ...base.transactions,
+        { id: "6", description: "Receita agosto", amount: 100, kind: "income", status: "paid", dueDate: "2026-08-05", paidDate: "2026-08-05", competenceDate: "2026-08-05", source: "manual" },
+      ],
+    };
+    const range = { start: "2026-07-08", end: "2026-08-05" };
+    const summary = calculateSummary(data, new Date(2026, 7, 1), range);
+    const flow = cashFlowSeries(data, new Date(2026, 7, 1), range);
+    expect(summary.realizedIncome).toBe(100);
+    expect(summary.realizedExpense).toBe(500);
+    expect(flow.at(-1)?.day).toBe("05/08");
+  });
+
   it("splits installments and preserves the exact total across years", () => {
     const items = createInstallments({ description: "Notebook", amount: 1000, date: "2026-11-30", installments: 3, cardId: "card" });
     expect(items.map((item) => item.amount)).toEqual([333.33, 333.33, 333.34]);

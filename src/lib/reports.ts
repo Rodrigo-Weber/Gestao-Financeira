@@ -1,7 +1,7 @@
 import { jsPDF } from "jspdf";
 import { strToU8, zipSync } from "fflate";
 import type { FinanceData } from "../types";
-import { calculateSummary, categorySpend } from "./finance";
+import { calculateSummary, categorySpend, type DateRange } from "./finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const dateBr = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
@@ -33,10 +33,10 @@ export function exportCsv(data: FinanceData) {
   download(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }), "weber-financeiro.csv");
 }
 
-export async function exportExcel(data: FinanceData, month = new Date()) {
-  const summary = calculateSummary(data, month);
+export async function exportExcel(data: FinanceData, month = new Date(), range?: DateRange) {
+  const summary = calculateSummary(data, month, range);
   const overview: CellValue[][] = [
-    ["Weber Financeiro", "Resumo mensal"],
+    ["Weber Financeiro", range ? "Resumo do período" : "Resumo mensal"],
     ["Saldo realizado", summary.realizedBalance],
     ["Saldo projetado", summary.projectedBalance],
     ["Receitas realizadas", summary.realizedIncome],
@@ -110,10 +110,10 @@ function createXlsx(sheets: SheetDefinition[]) {
   return zipSync(files, { level: 6 });
 }
 
-export function exportPdf(data: FinanceData, month = new Date()) {
+export function exportPdf(data: FinanceData, month = new Date(), range?: DateRange) {
   const doc = new jsPDF();
-  const summary = calculateSummary(data, month);
-  const categories = categorySpend(data, month).slice(0, 5);
+  const summary = calculateSummary(data, month, range);
+  const categories = categorySpend(data, month, range).slice(0, 5);
   doc.setFillColor(7, 28, 23);
   doc.rect(0, 0, 210, 42, "F");
   doc.setTextColor(255, 255, 255);
@@ -123,7 +123,7 @@ export function exportPdf(data: FinanceData, month = new Date()) {
   doc.text(`Relatório gerado em ${new Date().toLocaleDateString("pt-BR")}`, 16, 28);
   doc.setTextColor(24, 36, 32);
   doc.setFontSize(13);
-  doc.text("Resumo do mês", 16, 56);
+  doc.text(range ? "Resumo do período" : "Resumo do mês", 16, 56);
   doc.setFontSize(10);
   doc.text(`Saldo realizado: ${brl.format(summary.realizedBalance)}`, 16, 67);
   doc.text(`Saldo projetado: ${brl.format(summary.projectedBalance)}`, 16, 75);
