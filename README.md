@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="public/brand/original-badge-dark.png" alt="Weber Financeiro" width="520" />
+<img src="public/brand/original-horizontal-light.png" alt="Weber Financeiro" width="520" />
 
 # Weber Financeiro
 
