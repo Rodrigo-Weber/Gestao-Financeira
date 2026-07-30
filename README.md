@@ -2,8 +2,6 @@
 
 <img src="public/brand/original-horizontal-light.png" alt="Weber Financeiro" width="520" />
 
-# Weber Financeiro
-
 ### Finanças pessoais rápidas, visuais e assistidas por IA
 
 Organize contas, cartões, dívidas e fluxo de caixa sem depender de Open Finance.
