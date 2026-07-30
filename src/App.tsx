@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { addMonths, addYears, format, parseISO } from "date-fns";
-import { Bot, CalendarCheck2, ChartNoAxesCombined, ChevronDown, CreditCard, Eye, EyeOff, FileBarChart, LayoutDashboard, Menu, ReceiptText, Search, Settings, Target, TrendingDown, WalletCards, X } from "lucide-react";
+import { Bot, CalendarCheck2, ChartNoAxesCombined, ChevronDown, CreditCard, Eye, EyeOff, FileBarChart, LayoutDashboard, Menu, ReceiptText, Settings, Target, TrendingDown, WalletCards, X } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Dashboard } from "./components/Dashboard";
 import { TransactionsPage } from "./components/TransactionsPage";
@@ -521,7 +521,7 @@ export default function App() {
       <header className="topbar">
         <button className="icon-btn mobile-only" onClick={() => setMenuOpen(true)}><Menu size={21} /></button>
         <PeriodSelector mode={periodMode} month={selectedMonth} start={rangeStart} end={rangeEnd} onModeChange={setPeriodMode} onMonthChange={setSelectedMonth} onRangeChange={changeRange} />
-        <div className="topbar-actions"><button className="search-trigger" onClick={() => setPage("transactions")}><Search size={18} /><span>Buscar transação...</span><kbd>Ctrl K</kbd></button>{demo && <span className="demo-badge">Demonstração</span>}<button className="icon-btn" title={hideValues ? "Mostrar valores" : "Ocultar valores"} onClick={toggleValues}>{hideValues ? <EyeOff size={19} /> : <Eye size={19} />}</button><button className="ai-button" onClick={() => setChatOpen(true)}><SparkIcon /><span>Weber IA</span></button></div>
+        <div className="topbar-actions">{demo && <span className="demo-badge">Demonstração</span>}<button className="icon-btn" title={hideValues ? "Mostrar valores" : "Ocultar valores"} onClick={toggleValues}>{hideValues ? <EyeOff size={19} /> : <Eye size={19} />}</button><button className="ai-button" onClick={() => setChatOpen(true)}><SparkIcon /><span>Weber IA</span></button></div>
       </header>
       <div className={`page-content ${loadingData ? "loading" : ""}`}>
         {page === "today" && <Suspense fallback={<div className="route-loading">Preparando seu dia...</div>}><TodayPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onNavigate={(value) => setPage(value as Page)} /></Suspense>}
