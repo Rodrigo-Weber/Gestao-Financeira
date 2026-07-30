@@ -48,7 +48,13 @@ function localDraft(text: string): TransactionDraft | undefined {
   if (!match || !/(gastei|paguei|comprei|despesa|mercado|uber|conta)/i.test(text)) return undefined;
   const amount = Number(match[1].replace(",", "."));
   const clean = text.replace(match[0], "").replace(/^(gastei|paguei|comprei)\s*(em|no|na)?\s*/i, "").trim();
-  return { description: clean || "Nova despesa", amount, kind: "expense", date: new Date().toISOString().slice(0, 10), installments: 1, confidence: .72 };
+  const installments = Number(text.match(/\b(\d{1,2})\s*x\b/i)?.[1] ?? 1);
+  const paymentMethod = /\bcr[eé]dito\b/i.test(text) || installments > 1
+    ? "credit"
+    : /\bd[eé]bito\b/i.test(text)
+      ? "debit"
+      : "pix";
+  return { description: clean || "Nova despesa", amount, kind: "expense", date: new Date().toISOString().slice(0, 10), installments, paymentMethod, confidence: .72 };
 }
 
 export function ChatPanel({ open, cacheKey, onClose, data, onDraft, onEditTransaction, onDeleteTransaction }: { open: boolean; cacheKey: string; onClose: () => void; data: FinanceData; onDraft: (draft: TransactionDraft) => void; onEditTransaction: (transaction: Transaction, suggestions?: SuggestedChanges | null) => void; onDeleteTransaction: (transaction: Transaction) => void }) {

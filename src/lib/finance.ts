@@ -1,5 +1,5 @@
 import { addMonths, endOfMonth, format, isAfter, isBefore, isEqual, parseISO, startOfMonth, subDays } from "date-fns";
-import type { CreditCard, FinanceData, Transaction } from "../types";
+import type { CreditCard, FinanceData, PaymentMethod, Transaction } from "../types";
 
 const inRange = (date: string, start: Date, end: Date) => {
   const value = parseISO(date);
@@ -103,6 +103,7 @@ export function createInstallments(draft: {
   recurrence?: "none" | "monthly" | "yearly";
   kind?: "income" | "expense";
   status?: "paid" | "pending";
+  paymentMethod?: PaymentMethod;
 }): Transaction[] {
   const total = Math.max(1, draft.installments);
   const groupId = total > 1 ? crypto.randomUUID() : undefined;
@@ -125,6 +126,7 @@ export function createInstallments(draft: {
       recurringRuleId: draft.recurringRuleId,
       installmentNumber: total > 1 ? index + 1 : undefined,
       installmentTotal: total > 1 ? total : undefined,
+      paymentMethod: draft.cardId ? "credit" : draft.paymentMethod,
       source: draft.source ?? "manual",
       attachmentPath: index === 0 ? draft.attachmentPath : undefined,
     };

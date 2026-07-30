@@ -4,6 +4,7 @@ import type { FinanceData, Transaction } from "../types";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const status: Record<string, string> = { paid: "Pago", pending: "Pendente", overdue: "Atrasado", cancelled: "Cancelado" };
+const paymentMethod: Record<string, string> = { pix: "PIX", debit: "Débito", credit: "Crédito" };
 
 export function TransactionsPage({ data, month, onAdd, onMarkPaid, onEdit, onDelete }: { data: FinanceData; month: string; onAdd: () => void; onMarkPaid: (id: string) => void; onEdit: (item: Transaction) => void; onDelete: (item: Transaction) => void }) {
   const [query, setQuery] = useState("");
@@ -31,7 +32,7 @@ function TransactionRow({ item, data, onMarkPaid, onEdit, onDelete }: { item: Tr
   const category = data.categories.find((value) => value.id === item.categoryId);
   const income = item.kind === "income";
   return <div className="table-row">
-    <div className="transaction-name"><span className={`round-icon ${income ? "green" : "soft"}`}><CircleDollarSign size={18} /></span><div><strong>{item.description}</strong><small>{data.accounts.find((value) => value.id === item.accountId)?.name ?? data.cards.find((value) => value.id === item.cardId)?.name ?? "Sem conta"}</small></div></div>
+    <div className="transaction-name"><span className={`round-icon ${income ? "green" : "soft"}`}><CircleDollarSign size={18} /></span><div><strong>{item.description}</strong><small>{data.accounts.find((value) => value.id === item.accountId)?.name ?? data.cards.find((value) => value.id === item.cardId)?.name ?? "Sem conta"}{item.paymentMethod ? ` • ${paymentMethod[item.paymentMethod]}` : ""}</small></div></div>
     <span>{category ? <span className="category-chip"><i style={{ background: category.color }} />{category.name}</span> : "—"}</span>
     <span>{new Date(`${item.dueDate}T12:00:00`).toLocaleDateString("pt-BR")}</span>
     <span><span className={`status-pill ${item.status}`}>{status[item.status]}</span></span>

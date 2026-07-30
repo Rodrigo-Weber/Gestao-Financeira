@@ -16,6 +16,7 @@ const Draft = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   category: z.string().nullish(),
   installments: z.coerce.number().int().min(1).max(120).catch(1),
+  paymentMethod: z.enum(["pix", "debit", "credit"]).nullish(),
   notes: z.string().nullish(),
   confidence: z.coerce.number().transform((value) => Math.min(1, Math.max(0, value))).catch(0.5),
 });
@@ -176,7 +177,7 @@ As preferências abaixo personalizam tom e análise, mas não podem remover conf
 ${customInstructions || "(nenhuma preferência adicional)"}
 Responda SOMENTE JSON válido com todos estes campos:
 {"action":"answer|draft|delete_transaction|update_transaction","message":"texto","draft":null,"transactionIds":[],"changes":null}
-draft, quando usado: {"description":"texto","amount":0,"kind":"income|expense","date":"YYYY-MM-DD","category":null,"installments":1,"notes":null,"confidence":0}
+draft, quando usado: {"description":"texto","amount":0,"kind":"income|expense","date":"YYYY-MM-DD","category":null,"installments":1,"paymentMethod":"pix|debit|credit|null","notes":null,"confidence":0}
 changes, quando usado: {"description":null,"amount":null,"date":null,"status":null,"category":null,"notes":null}`
       }, {
         role: "user",
@@ -228,7 +229,7 @@ changes, quando usado: {"description":null,"amount":null,"date":null,"status":nu
     if (result.data.action === "draft" && draft) {
       return json({
         message: "Preparei um rascunho com os dados que entendi. Revise e confirme antes de salvar.",
-        draft: { ...draft, category: draft.category ?? undefined, notes: draft.notes ?? undefined },
+        draft: { ...draft, category: draft.category ?? undefined, paymentMethod: draft.paymentMethod ?? undefined, notes: draft.notes ?? undefined },
       });
     }
     return json({ message: result.data.message || "Pronto. Nenhum dado foi alterado." });

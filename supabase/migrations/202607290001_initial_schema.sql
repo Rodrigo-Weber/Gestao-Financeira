@@ -119,6 +119,7 @@ create table public.transactions (
   installment_total integer,
   notes text,
   attachment_path text,
+  payment_method text check (payment_method is null or payment_method in ('pix','debit','credit')),
   source text not null default 'manual' check (source in ('manual','chat','audio','ocr')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -241,4 +242,3 @@ create policy "users_delete_own_receipts" on storage.objects
 for delete using (bucket_id = 'receipts' and split_part(name, '/', 1) = auth.uid()::text);
 
 revoke all on public.ai_requests from anon, authenticated;
-

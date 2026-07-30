@@ -14,6 +14,7 @@ const Draft = z.object({
   date: z.string(),
   category: z.string().nullable(),
   installments: z.number().int().min(1).max(120),
+  paymentMethod: z.enum(["pix", "debit", "credit"]).nullish().catch(null),
   notes: z.string().nullable(),
   confidence: z.number().min(0).max(1),
 });
@@ -46,7 +47,7 @@ export default async (req: Request) => {
 Use o total efetivamente pago, data no formato YYYY-MM-DD e uma descrição curta com o estabelecimento.
 Se não houver parcelamento explícito, use 1. Nunca invente dados ilegíveis; reduza confidence. Hoje é ${new Date().toISOString().slice(0, 10)}.
 Responda SOMENTE como JSON válido, sem markdown, com exatamente:
-{"description":"texto","amount":0,"kind":"income|expense","date":"YYYY-MM-DD","category":null,"installments":1,"notes":null,"confidence":0}`
+{"description":"texto","amount":0,"kind":"income|expense","date":"YYYY-MM-DD","category":null,"installments":1,"paymentMethod":"pix|debit|credit|null","notes":null,"confidence":0}`
       }, {
         role: "user",
         content: [
@@ -59,7 +60,7 @@ Responda SOMENTE como JSON válido, sem markdown, com exatamente:
     const content = response.choices[0]?.message?.content;
     if (!content) throw new Error("Resposta vazia da Groq");
     const draft = Draft.parse(JSON.parse(content));
-    return json({ draft: { ...draft, category: draft.category ?? undefined, notes: draft.notes ?? undefined }, attachmentPath });
+    return json({ draft: { ...draft, category: draft.category ?? undefined, paymentMethod: draft.paymentMethod ?? undefined, notes: draft.notes ?? undefined }, attachmentPath });
   } catch (error) {
     await auth.admin.storage.from("receipts").remove([attachmentPath]);
     console.error(error);

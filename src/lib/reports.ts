@@ -6,6 +6,7 @@ import { calculateSummary, categorySpend } from "./finance";
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const dateBr = (value: string) => new Date(`${value}T12:00:00`).toLocaleDateString("pt-BR");
 const statusLabel: Record<string, string> = { paid: "Pago", pending: "Pendente", overdue: "Atrasado", cancelled: "Cancelado" };
+const paymentLabel: Record<string, string> = { pix: "PIX", debit: "Débito", credit: "Crédito" };
 
 function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -17,11 +18,12 @@ function download(blob: Blob, filename: string) {
 }
 
 export function exportCsv(data: FinanceData) {
-  const header = ["Data", "Descrição", "Tipo", "Status", "Categoria", "Conta", "Valor"];
+  const header = ["Data", "Descrição", "Tipo", "Pagamento", "Status", "Categoria", "Conta", "Valor"];
   const rows = data.transactions.map((item) => [
     item.dueDate,
     item.description,
     item.kind,
+    item.paymentMethod ? paymentLabel[item.paymentMethod] : "",
     statusLabel[item.status],
     data.categories.find((category) => category.id === item.categoryId)?.name ?? "",
     data.accounts.find((account) => account.id === item.accountId)?.name ?? "",
@@ -42,9 +44,9 @@ export async function exportExcel(data: FinanceData, month = new Date()) {
     ["Despesas previstas", summary.pendingExpense],
   ];
   const transactionRows: CellValue[][] = [
-    ["Data", "Descrição", "Tipo", "Status", "Categoria", "Conta", "Valor"],
+    ["Data", "Descrição", "Tipo", "Pagamento", "Status", "Categoria", "Conta", "Valor"],
     ...data.transactions.map((item) => [
-      item.dueDate, item.description, item.kind, statusLabel[item.status],
+      item.dueDate, item.description, item.kind, item.paymentMethod ? paymentLabel[item.paymentMethod] : "", statusLabel[item.status],
       data.categories.find((category) => category.id === item.categoryId)?.name ?? "",
       data.accounts.find((account) => account.id === item.accountId)?.name ?? "", item.amount,
     ]),
@@ -55,7 +57,7 @@ export async function exportExcel(data: FinanceData, month = new Date()) {
   ];
   const bytes = createXlsx([
     { name: "Resumo", rows: overview, currencyColumns: [1] },
-    { name: "Transações", rows: transactionRows, currencyColumns: [6], filter: true },
+    { name: "Transações", rows: transactionRows, currencyColumns: [7], filter: true },
     { name: "Dívidas", rows: debtRows, currencyColumns: [2, 4], percentColumns: [3], filter: true },
   ]);
   download(new Blob([bytes.buffer as ArrayBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "weber-financeiro.xlsx");

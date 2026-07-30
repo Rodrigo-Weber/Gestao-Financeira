@@ -59,8 +59,10 @@ O projeto funciona no navegador, com uma experiência resumida no celular e uma 
 - Registro manual com apenas descrição e valor.
 - Receita ou despesa com padrões inteligentes.
 - Campos avançados recolhidos em **Mais opções**.
+- Categoria sugerida automaticamente pelo título e pelo histórico.
+- Métodos de pagamento PIX, débito e crédito.
 - Lançamentos únicos, recorrentes ou parcelados.
-- Compras no cartão vinculadas à fatura correta.
+- Compras e parcelas no cartão vinculadas automaticamente ao fechamento e ao dia de pagamento da fatura.
 - Ajuste rápido do saldo para conferência com o aplicativo do banco.
 - Edição e exclusão de transações.
 
@@ -162,7 +164,7 @@ Nunca envie o arquivo `.env` para o Git.
 
 1. Crie um projeto no [Supabase](https://supabase.com/).
 2. Abra o SQL Editor.
-3. Execute [`supabase/migrations/202607290001_initial_schema.sql`](supabase/migrations/202607290001_initial_schema.sql).
+3. Execute, em ordem, os arquivos da pasta [`supabase/migrations`](supabase/migrations).
 4. Em **Authentication**, habilite login por e-mail e senha.
 5. Configure as URLs permitidas de redirecionamento.
 
@@ -175,6 +177,9 @@ A migração cria:
 - Row Level Security;
 - políticas de isolamento por usuário;
 - bucket privado para comprovantes.
+
+Se o banco já estava configurado antes da inclusão dos métodos de pagamento, execute apenas
+[`202607300001_payment_method.sql`](supabase/migrations/202607300001_payment_method.sql).
 
 ### 4. Inicie com Netlify Dev
 

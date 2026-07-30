@@ -47,6 +47,21 @@ describe("financial calculations", () => {
     expect(getInvoiceDates("2027-03-29", card)).toEqual({ closingDate: "2027-04-28", dueDate: "2027-05-05", referenceMonth: "2027-05" });
   });
 
+  it("puts every credit installment on the card payment day in consecutive months", () => {
+    const card = { id: "card", name: "Cartão", brand: "Visa", lastDigits: "1234", limit: 5000, closingDay: 18, dueDay: 25, color: "#000" };
+    const items = createInstallments({ description: "Notebook", amount: 1200, date: "2026-07-30", installments: 3, cardId: card.id, card });
+    expect(items.map((item) => item.dueDate)).toEqual(["2026-08-25", "2026-09-25", "2026-10-25"]);
+    expect(items.every((item) => item.paymentMethod === "credit")).toBe(true);
+  });
+
+  it("keeps pix and debit as immediate account expenses", () => {
+    const [pix] = createInstallments({ description: "Mercado", amount: 80, date: "2026-07-30", installments: 1, accountId: "a", paymentMethod: "pix", status: "paid" });
+    const [debit] = createInstallments({ description: "Farmácia", amount: 40, date: "2026-07-30", installments: 1, accountId: "a", paymentMethod: "debit", status: "paid" });
+    expect(pix.paymentMethod).toBe("pix");
+    expect(debit.paymentMethod).toBe("debit");
+    expect([pix.kind, debit.kind]).toEqual(["expense", "expense"]);
+  });
+
   it("creates a received income through the quick entry flow", () => {
     const [income] = createInstallments({ description: "Freela", amount: 450, date: "2026-07-30", installments: 1, kind: "income", status: "paid", accountId: "a" });
     expect(income.kind).toBe("income");

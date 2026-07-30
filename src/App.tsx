@@ -151,7 +151,7 @@ export default function App() {
         const { error: ruleError } = await supabase.from("recurring_rules").insert({
           id: recurringRuleId, user_id: session.user.id, description: value.description,
           frequency: value.recurrence, starts_on: value.date, next_run_on: nextRun,
-          template: { amount: value.amount, category_id: value.categoryId, account_id: value.accountId, card_id: value.cardId },
+          template: { amount: value.amount, category_id: value.categoryId, account_id: value.accountId, card_id: value.cardId, payment_method: value.paymentMethod },
         });
         if (ruleError) showToast("Não foi possível criar a regra de repetição.");
       }
@@ -160,7 +160,7 @@ export default function App() {
         due_date: item.dueDate, competence_date: item.competenceDate, account_id: item.accountId || null, card_id: item.cardId || null,
         category_id: item.categoryId || null, installment_group_id: item.installmentGroupId || null, installment_number: item.installmentNumber || null,
         installment_total: item.installmentTotal || null, recurring_rule_id: item.recurringRuleId || null,
-        source: item.source, attachment_path: item.attachmentPath || null,
+        payment_method: item.paymentMethod || null, source: item.source, attachment_path: item.attachmentPath || null,
       }));
       const { error } = await supabase.from("transactions").insert(rows);
       if (error) showToast("O lançamento ficou apenas nesta sessão. Verifique o Supabase.");
@@ -437,7 +437,7 @@ export default function App() {
     <nav className="mobile-nav">{nav.slice(0, 4).map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => setPage(item.id)}><item.icon size={20} /><span>{item.label}</span></button>)}<button className="mobile-add" onClick={() => { setDraft(null); setAddOpen(true); }}>+</button></nav>
     <ChatPanel key={session?.user.id ?? "demo"} cacheKey={`weber-financeiro:chat:${session?.user.id ?? "demo"}`} open={chatOpen} onClose={() => setChatOpen(false)} data={data} onDraft={openDraft} onEditTransaction={openTransactionEdit} onDeleteTransaction={setDeletingTransaction} />
     {chatOpen && <button className="chat-overlay" onClick={() => setChatOpen(false)} />}
-    <QuickAddModal key={`${draft?.description ?? "manual"}-${addOpen}`} open={addOpen} accounts={data.accounts} categories={data.categories} cards={data.cards} draft={draft} onClose={() => { setAddOpen(false); setDraft(null); }} onSave={saveTransaction} />
+    <QuickAddModal key={`${draft?.description ?? "manual"}-${addOpen}`} open={addOpen} accounts={data.accounts} categories={data.categories} cards={data.cards} transactions={data.transactions} draft={draft} onClose={() => { setAddOpen(false); setDraft(null); }} onSave={saveTransaction} />
     <EntityModal key={entityModal ?? "closed"} kind={entityModal} onClose={() => setEntityModal(null)} onSave={saveEntity} />
     <TransactionEditModal key={`edit-${editingTransaction?.id ?? "closed"}-${editSuggestions ? "suggested" : "manual"}`} transaction={editingTransaction} data={data} suggestions={editSuggestions} onClose={() => { setEditingTransaction(null); setEditSuggestions(null); }} onSave={updateTransaction} />
     <TransactionDeleteModal key={`delete-${deletingTransaction?.id ?? "closed"}`} transaction={deletingTransaction} email={session?.user.email} demo={demo} onClose={() => setDeletingTransaction(null)} onConfirm={deleteTransaction} />
@@ -453,7 +453,8 @@ function fromDbTransaction(item: Record<string, any>): Transaction {
     categoryId: item.category_id ?? undefined, accountId: item.account_id ?? undefined, destinationAccountId: item.destination_account_id ?? undefined, cardId: item.card_id ?? undefined,
     debtId: item.debt_id ?? undefined, installmentGroupId: item.installment_group_id ?? undefined,
     installmentNumber: item.installment_number ?? undefined, installmentTotal: item.installment_total ?? undefined,
-    recurringRuleId: item.recurring_rule_id ?? undefined, notes: item.notes ?? undefined, attachmentPath: item.attachment_path ?? undefined, source: item.source,
+    recurringRuleId: item.recurring_rule_id ?? undefined, notes: item.notes ?? undefined, attachmentPath: item.attachment_path ?? undefined,
+    paymentMethod: item.payment_method ?? undefined, source: item.source,
   };
 }
 

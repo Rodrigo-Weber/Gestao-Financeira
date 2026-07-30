@@ -346,6 +346,16 @@ h2 { font-size: 1.08rem; letter-spacing: -.025em; }
 .quick-money { min-height: 55px; }
 .quick-money span { font-size: .85rem; }
 .quick-money input { font-size: 1.2rem; font-weight: 800; }
+.category-suggestion { margin-top: -7px; padding: 8px 10px; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; border: 1px solid #dcebe5; border-radius: 9px; color: #577269; background: #f6fbf9; }
+.category-suggestion span { font-size: .56rem; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
+.category-suggestion strong { color: #087354; font-size: .64rem; }
+.category-suggestion small { grid-column: 1 / -1; color: #81918b; font-size: .53rem; }
+.payment-method { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; border: 0; }
+.payment-method legend { margin-bottom: 7px; padding: 0; color: #4f5e58; font-size: .65rem; font-weight: 700; }
+.payment-method button { min-height: 42px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; color: #65736e; background: #fbfcfb; font-size: .62rem; font-weight: 750; }
+.payment-method button:hover { border-color: #a8d5c5; color: #087354; }
+.payment-method button.active { border-color: #73c3a7; color: #087354; background: #eaf8f2; box-shadow: 0 0 0 2px rgba(21,151,110,.08); }
+.payment-method button:disabled { color: #a2aba7; background: #f3f5f4; }
 .quick-defaults { padding: 9px 11px; display: flex; align-items: center; gap: 7px; border-radius: 9px; color: #537068; background: #f1f7f5; font-size: .59rem; }
 .details-toggle { align-self: flex-start; padding: 3px 0; display: flex; align-items: center; gap: 5px; border: 0; color: var(--green); background: transparent; font-size: .61rem; font-weight: 750; }
 .quick-details { display: flex; flex-direction: column; gap: 13px; padding-top: 2px; }

@@ -1,5 +1,6 @@
 export type TransactionKind = "income" | "expense" | "transfer" | "card_purchase" | "invoice_payment" | "debt_payment";
 export type TransactionStatus = "paid" | "pending" | "overdue" | "cancelled";
+export type PaymentMethod = "pix" | "debit" | "credit";
 
 export interface Account {
   id: string;
@@ -39,6 +40,7 @@ export interface Transaction {
   installmentTotal?: number;
   notes?: string;
   attachmentPath?: string;
+  paymentMethod?: PaymentMethod;
   source: "manual" | "chat" | "audio" | "ocr";
 }
 
@@ -79,6 +81,7 @@ export interface TransactionDraft {
   date: string;
   category?: string;
   installments: number;
+  paymentMethod?: PaymentMethod;
   notes?: string;
   attachmentPath?: string;
   confidence?: number;
