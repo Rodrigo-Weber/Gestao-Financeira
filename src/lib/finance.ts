@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, isAfter, isBefore, isEqual, parseISO, startOfMonth, subDays } from "date-fns";
+import { addMonths, differenceInCalendarDays, endOfMonth, format, isAfter, isBefore, isEqual, parseISO, startOfDay, startOfMonth, subDays } from "date-fns";
 import type { CreditCard, FinanceData, PaymentMethod, Transaction } from "../types";
 
 const inRange = (date: string, start: Date, end: Date) => {
@@ -86,6 +86,169 @@ export function cashFlowSeries(data: FinanceData, month = new Date()) {
       saldo: openingBalance + entradas - saidas,
     };
   });
+}
+
+export interface SpendingGuide {
+  cashBalance: number;
+  committedUntilIncome: number;
+  availableUntilIncome: number;
+  weeklyAllowance: number;
+  shortfall: number;
+  boundaryDate: string;
+  nextIncomeDate?: string;
+  daysUntilBoundary: number;
+}
+
+export interface FinancialAlert {
+  id: string;
+  severity: "urgent" | "attention" | "positive";
+  title: string;
+  description: string;
+  page: "transactions" | "cards" | "settings";
+}
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100;
+
+export function calculateSpendingGuide(data: FinanceData, referenceDate = new Date()): SpendingGuide {
+  const reference = startOfDay(referenceDate);
+  const nextIncome = data.transactions
+    .filter((item) =>
+      item.kind === "income" &&
+      item.status !== "paid" &&
+      item.status !== "cancelled" &&
+      !isBefore(parseISO(item.dueDate), reference),
+    )
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0];
+  const boundary = nextIncome ? parseISO(nextIncome.dueDate) : endOfMonth(reference);
+  const cashBalance = roundMoney(data.accounts.reduce((sum, account) => sum + accountBalance(data, account.id, reference), 0));
+  const committedUntilIncome = roundMoney(data.transactions
+    .filter((item) =>
+      item.kind !== "income" &&
+      item.kind !== "transfer" &&
+      item.kind !== "card_purchase" &&
+      item.status !== "paid" &&
+      item.status !== "cancelled" &&
+      !isAfter(parseISO(item.dueDate), boundary),
+    )
+    .reduce((sum, item) => sum + item.amount, 0));
+  const rawAvailable = cashBalance - committedUntilIncome;
+  const daysUntilBoundary = Math.max(1, differenceInCalendarDays(boundary, reference) + 1);
+  const availableUntilIncome = roundMoney(Math.max(0, rawAvailable));
+  const weeklyAllowance = roundMoney(availableUntilIncome / Math.max(1, daysUntilBoundary / 7));
+
+  return {
+    cashBalance,
+    committedUntilIncome,
+    availableUntilIncome,
+    weeklyAllowance,
+    shortfall: roundMoney(Math.max(0, -rawAvailable)),
+    boundaryDate: format(boundary, "yyyy-MM-dd"),
+    nextIncomeDate: nextIncome?.dueDate,
+    daysUntilBoundary,
+  };
+}
+
+export function financialAlerts(data: FinanceData, month = new Date(), referenceDate = new Date()): FinancialAlert[] {
+  const alerts: FinancialAlert[] = [];
+  const reference = startOfDay(referenceDate);
+  const monthStart = startOfMonth(month);
+  const monthEnd = endOfMonth(month);
+  const monthKey = format(month, "yyyy-MM");
+  const summary = calculateSummary(data, month);
+  const guide = calculateSpendingGuide(data, reference);
+  const overdue = data.transactions.filter((item) =>
+    item.status !== "paid" &&
+    item.status !== "cancelled" &&
+    item.kind !== "income" &&
+    isBefore(parseISO(item.dueDate), reference),
+  );
+
+  if (overdue.length) {
+    const total = roundMoney(overdue.reduce((sum, item) => sum + item.amount, 0));
+    alerts.push({
+      id: "overdue",
+      severity: "urgent",
+      title: `${overdue.length} ${overdue.length === 1 ? "conta atrasada" : "contas atrasadas"}`,
+      description: `${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(total)} aguardando pagamento.`,
+      page: "transactions",
+    });
+  }
+
+  if (guide.shortfall > 0) {
+    alerts.push({
+      id: "cash-shortfall",
+      severity: "urgent",
+      title: "Saldo pode não cobrir compromissos",
+      description: `Faltam ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(guide.shortfall)} até ${format(parseISO(guide.boundaryDate), "dd/MM")}.`,
+      page: "transactions",
+    });
+  } else if (summary.projectedBalance < 0) {
+    alerts.push({
+      id: "negative-projection",
+      severity: "urgent",
+      title: "Mês termina no vermelho",
+      description: `Projeção de ${new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(summary.projectedBalance)}.`,
+      page: "transactions",
+    });
+  }
+
+  const monthProgress = isBefore(reference, monthStart)
+    ? 0
+    : isAfter(reference, monthEnd)
+      ? 100
+      : Math.round(reference.getDate() / monthEnd.getDate() * 100);
+  const spentCategories = categorySpend(data, month);
+  data.budgets.filter((item) => item.month === monthKey).forEach((budget) => {
+    const category = data.categories.find((item) => item.id === budget.categoryId);
+    const spent = spentCategories.find((item) => item.name === category?.name)?.value ?? 0;
+    const percent = budget.limit ? Math.round(spent / budget.limit * 100) : 0;
+    if (percent >= 100) {
+      alerts.push({
+        id: `budget-over-${budget.id}`,
+        severity: "urgent",
+        title: `${category?.name ?? "Categoria"} acima do limite`,
+        description: `${percent}% do orçamento utilizado.`,
+        page: "settings",
+      });
+    } else if (percent >= 75 && percent > monthProgress + 15) {
+      alerts.push({
+        id: `budget-pace-${budget.id}`,
+        severity: "attention",
+        title: `${category?.name ?? "Categoria"} em ritmo alto`,
+        description: `${percent}% usado com ${monthProgress}% do mês transcorrido.`,
+        page: "settings",
+      });
+    }
+  });
+
+  data.cards.forEach((card) => {
+    const used = data.transactions
+      .filter((item) => item.cardId === card.id && item.kind === "card_purchase" && item.status !== "cancelled" && item.competenceDate.startsWith(monthKey))
+      .reduce((sum, item) => sum + item.amount, 0);
+    const percent = card.limit ? Math.round(used / card.limit * 100) : 0;
+    if (percent >= 90) {
+      alerts.push({
+        id: `card-limit-${card.id}`,
+        severity: percent >= 100 ? "urgent" : "attention",
+        title: `${card.name} perto do limite`,
+        description: `${percent}% do limite utilizado.`,
+        page: "cards",
+      });
+    }
+  });
+
+  if (!alerts.length) {
+    alerts.push({
+      id: "all-clear",
+      severity: "positive",
+      title: "Nenhuma urgência financeira",
+      description: "Contas, limites e orçamentos sem alertas importantes.",
+      page: "transactions",
+    });
+  }
+
+  const severityOrder = { urgent: 0, attention: 1, positive: 2 };
+  return alerts.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
 }
 
 export function createInstallments(draft: {

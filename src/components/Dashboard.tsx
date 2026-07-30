@@ -1,8 +1,8 @@
 import { useMemo } from "react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, CreditCard, Gauge, PiggyBank, Target, TrendingDown, Wallet, WalletCards } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, CreditCard, Gauge, PiggyBank, Target, TrendingDown, Wallet, WalletCards } from "lucide-react";
 import type { FinanceData } from "../types";
-import { accountBalance, calculateSummary, cashFlowSeries, categorySpend, monthTransactions } from "../lib/finance";
+import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, categorySpend, financialAlerts, monthTransactions } from "../lib/finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const short = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
@@ -21,6 +21,17 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
   const flow = useMemo(() => cashFlowSeries(data, month), [data, month]);
   const monthKey = `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}`;
   const monthLabel = month.toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const today = new Date();
+  const isCurrentMonth = today.getFullYear() === month.getFullYear() && today.getMonth() === month.getMonth();
+  const monthIsPast = month.getFullYear() < today.getFullYear() || (month.getFullYear() === today.getFullYear() && month.getMonth() < today.getMonth());
+  const referenceTime = isCurrentMonth
+    ? new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12).getTime()
+    : monthIsPast
+      ? new Date(month.getFullYear(), month.getMonth() + 1, 0, 12).getTime()
+      : new Date(month.getFullYear(), month.getMonth(), 1, 12).getTime();
+  const guide = useMemo(() => calculateSpendingGuide(data, new Date(referenceTime)), [data, referenceTime]);
+  const alerts = useMemo(() => financialAlerts(data, month, new Date(referenceTime)), [data, month, referenceTime]);
+  const guideBoundary = new Date(`${guide.boundaryDate}T12:00:00`).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
   const upcoming = data.transactions.filter((item) => item.dueDate.startsWith(monthKey) && item.status !== "paid" && item.status !== "cancelled").sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
   const categoryTotal = categories.reduce((sum, item) => sum + item.value, 0);
   const card = data.cards[0];
@@ -53,6 +64,28 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
     <section className="welcome-row">
       <div><span className="eyebrow">Visão de {monthLabel}</span><h1>Olá, {userName.split(" ")[0]} <span>👋</span></h1><p>Seu dinheiro está sob controle. Veja o que merece atenção hoje.</p></div>
       <button className="primary-btn desktop-only" onClick={onAdd}>+ Novo lançamento</button>
+    </section>
+
+    <section className="decision-grid">
+      <article className={`spending-guide ${guide.shortfall > 0 ? "danger" : ""}`}>
+        <div className="guide-heading"><div><span className="eyebrow light">Decisão rápida</span><h2>{guide.shortfall > 0 ? "Compromissos ainda não cobertos" : "Dinheiro livre após compromissos"}</h2></div><span className="estimate-pill">Estimativa</span></div>
+        <div className="guide-value"><strong>{brl.format(guide.availableUntilIncome)}</strong><span>{guide.nextIncomeDate ? `livres até a próxima renda em ${guideBoundary}` : `livres até ${guideBoundary}`}</span></div>
+        <div className="guide-breakdown">
+          <div><small>Saldo nas contas</small><strong>{brl.format(guide.cashBalance)}</strong></div>
+          <div><small>Contas reservadas</small><strong>{brl.format(guide.committedUntilIncome)}</strong></div>
+          <div><small>Ritmo semanal</small><strong>{brl.format(guide.weeklyAllowance)}</strong></div>
+        </div>
+        <small className="guide-note">{guide.shortfall > 0 ? `Faltam ${brl.format(guide.shortfall)} para cobrir tudo até essa data.` : "Baseado nos saldos e lançamentos cadastrados. Valores futuros não registrados não entram no cálculo."}</small>
+      </article>
+
+      <article className="panel alert-center">
+        <div className="panel-heading"><div><span className="eyebrow">Prioridade agora</span><h2>Alertas financeiros</h2></div><span className="alert-count">{alerts.filter((item) => item.severity !== "positive").length}</span></div>
+        <div className="alert-list">{alerts.slice(0, 3).map((alert) => <button key={alert.id} className={`financial-alert ${alert.severity}`} onClick={() => onNavigate(alert.page)}>
+          <span className="alert-symbol">{alert.severity === "positive" ? <CheckCircle2 size={18} /> : <AlertTriangle size={18} />}</span>
+          <span><strong>{alert.title}</strong><small>{alert.description}</small></span>
+          <ChevronRight size={17} />
+        </button>)}</div>
+      </article>
     </section>
 
     <section className="metrics-grid">

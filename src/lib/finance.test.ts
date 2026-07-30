@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FinanceData } from "../types";
-import { accountBalance, calculateSummary, cashFlowSeries, createInstallments, getInvoiceDates, simulateDebtPayoff } from "./finance";
+import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, createInstallments, financialAlerts, getInvoiceDates, simulateDebtPayoff } from "./finance";
 
 const base: FinanceData = {
   accounts: [{ id: "a", name: "Conta", institution: "", type: "checking", initialBalance: 1000, color: "#000", active: true }],
@@ -85,5 +85,45 @@ describe("financial calculations", () => {
     expect(accountBalance(data, "a", new Date(2026, 6, 30))).toBe(1050);
     expect(accountBalance(data, "b", new Date(2026, 6, 30))).toBe(600);
     expect(cashFlowSeries(data, new Date(2026, 6, 1)).find((item) => item.day === "10")?.saldo).toBe(1650);
+  });
+
+  it("calculates money available after commitments until the next income", () => {
+    const data: FinanceData = {
+      accounts: [{ id: "a", name: "Conta", institution: "", type: "checking", initialBalance: 2000, color: "#000", active: true }],
+      categories: [],
+      cards: [],
+      debts: [],
+      budgets: [],
+      transactions: [
+        { id: "paid", description: "Conta paga", amount: 200, kind: "expense", status: "paid", dueDate: "2026-07-05", paidDate: "2026-07-05", competenceDate: "2026-07-05", accountId: "a", source: "manual" },
+        { id: "late", description: "Conta atrasada", amount: 300, kind: "expense", status: "pending", dueDate: "2026-07-07", competenceDate: "2026-07-07", accountId: "a", source: "manual" },
+        { id: "invoice", description: "Fatura", amount: 500, kind: "invoice_payment", status: "pending", dueDate: "2026-07-12", competenceDate: "2026-07-12", accountId: "a", source: "manual" },
+        { id: "card", description: "Compra já incluída na fatura", amount: 500, kind: "card_purchase", status: "paid", dueDate: "2026-07-12", competenceDate: "2026-07-08", source: "manual" },
+        { id: "income", description: "Salário", amount: 3000, kind: "income", status: "pending", dueDate: "2026-07-20", competenceDate: "2026-07-20", accountId: "a", source: "manual" },
+        { id: "later", description: "Conta depois da renda", amount: 900, kind: "expense", status: "pending", dueDate: "2026-07-25", competenceDate: "2026-07-25", accountId: "a", source: "manual" },
+      ],
+    };
+    const guide = calculateSpendingGuide(data, new Date(2026, 6, 10));
+    expect(guide.cashBalance).toBe(1800);
+    expect(guide.committedUntilIncome).toBe(800);
+    expect(guide.availableUntilIncome).toBe(1000);
+    expect(guide.weeklyAllowance).toBe(636.36);
+    expect(guide.nextIncomeDate).toBe("2026-07-20");
+    expect(guide.shortfall).toBe(0);
+  });
+
+  it("warns when budget spending is too fast for the current point in month", () => {
+    const data: FinanceData = {
+      accounts: [{ id: "a", name: "Conta", institution: "", type: "checking", initialBalance: 1000, color: "#000", active: true }],
+      categories: [{ id: "food", name: "Alimentação", icon: "", color: "#f90", kind: "expense" }],
+      cards: [],
+      debts: [],
+      budgets: [{ id: "budget", categoryId: "food", month: "2026-07", limit: 100 }],
+      transactions: [
+        { id: "food-1", description: "Mercado", amount: 90, kind: "expense", status: "paid", dueDate: "2026-07-08", paidDate: "2026-07-08", competenceDate: "2026-07-08", categoryId: "food", accountId: "a", source: "manual" },
+      ],
+    };
+    const alerts = financialAlerts(data, new Date(2026, 6, 1), new Date(2026, 6, 10));
+    expect(alerts.some((item) => item.id === "budget-pace-budget" && item.severity === "attention")).toBe(true);
   });
 });

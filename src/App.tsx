@@ -1,7 +1,7 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { addMonths, addYears, format, parseISO } from "date-fns";
-import { Bell, Bot, ChevronDown, CreditCard, FileBarChart, LayoutDashboard, Menu, ReceiptText, Search, Settings, TrendingDown, WalletCards, X } from "lucide-react";
+import { Bell, Bot, CalendarCheck2, ChartNoAxesCombined, ChevronDown, CreditCard, Eye, EyeOff, FileBarChart, LayoutDashboard, Menu, ReceiptText, Search, Settings, Target, TrendingDown, WalletCards, X } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Dashboard } from "./components/Dashboard";
 import { TransactionsPage } from "./components/TransactionsPage";
@@ -13,21 +13,29 @@ import { QuickAddModal } from "./components/QuickAddModal";
 import { EntityModal, type EntityKind, type EntityPayload } from "./components/EntityModal";
 import { SettingsPage } from "./components/SettingsPage";
 import { TransactionDeleteModal, TransactionEditModal, type TransactionEditValues } from "./components/TransactionActionModals";
+import type { AssetInput, FundInput, GoalInput } from "./components/FinancialHealthPages";
 import { demoData } from "./lib/demoData";
 import { accountBalance, createInstallments } from "./lib/finance";
+import { apiFetch } from "./lib/api";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import type { Account, FinanceData, Transaction, TransactionDraft } from "./types";
 
-type Page = "dashboard" | "transactions" | "accounts" | "cards" | "debts" | "reports" | "settings";
+type Page = "today" | "dashboard" | "planning" | "patrimony" | "transactions" | "accounts" | "cards" | "debts" | "reports" | "settings";
 const ReportsPage = lazy(() => import("./components/ReportsPage").then((module) => ({ default: module.ReportsPage })));
+const TodayPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.TodayPage })));
+const PlanningPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.PlanningPage })));
+const PatrimonyPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.PatrimonyPage })));
 
 const nav = [
-  { id: "dashboard" as Page, label: "Visão geral", icon: LayoutDashboard },
-  { id: "transactions" as Page, label: "Transações", icon: ReceiptText },
-  { id: "accounts" as Page, label: "Contas", icon: WalletCards },
-  { id: "cards" as Page, label: "Cartões", icon: CreditCard },
-  { id: "debts" as Page, label: "Dívidas", icon: TrendingDown },
-  { id: "reports" as Page, label: "Relatórios", icon: FileBarChart },
+  { id: "today" as Page, label: "Hoje", icon: CalendarCheck2, group: "Dia a dia" },
+  { id: "dashboard" as Page, label: "Visão geral", icon: LayoutDashboard, group: "Dia a dia" },
+  { id: "transactions" as Page, label: "Transações", icon: ReceiptText, group: "Dia a dia" },
+  { id: "planning" as Page, label: "Planejar", icon: Target, group: "Planejamento" },
+  { id: "patrimony" as Page, label: "Patrimônio", icon: ChartNoAxesCombined, group: "Planejamento" },
+  { id: "accounts" as Page, label: "Contas", icon: WalletCards, group: "Gestão" },
+  { id: "cards" as Page, label: "Cartões", icon: CreditCard, group: "Gestão" },
+  { id: "debts" as Page, label: "Dívidas", icon: TrendingDown, group: "Gestão" },
+  { id: "reports" as Page, label: "Relatórios", icon: FileBarChart, group: "Gestão" },
 ];
 
 export default function App() {
@@ -50,6 +58,8 @@ export default function App() {
   const [adjustingAccount, setAdjustingAccount] = useState<Account | null>(null);
   const [toast, setToast] = useState("");
   const [loadingData, setLoadingData] = useState(false);
+  const [hideValues, setHideValues] = useState(() => localStorage.getItem("weber-financeiro:hide-values") === "true");
+  const autoSyncAttempted = useRef(false);
 
   useEffect(() => {
     if (!supabase) return;
@@ -59,7 +69,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (session && !demo) void loadFinanceData();
+    if (session && !demo) void bootstrapFinanceData();
+    if (!session) autoSyncAttempted.current = false;
   }, [session, demo]);
 
   useEffect(() => {
@@ -76,28 +87,57 @@ export default function App() {
   async function loadFinanceData() {
     if (!supabase) return;
     setLoadingData(true);
-    const [accounts, categories, transactions, cards, debts, budgets, profile] = await Promise.all([
+    const [accounts, categories, transactions, cards, debts, budgets, profile, investments, goals, annualFunds, assets, snapshots] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("categories").select("*").order("name"),
       supabase.from("transactions").select("*").order("due_date", { ascending: false }),
       supabase.from("credit_cards").select("*").order("created_at"),
-      supabase.from("debts").select("*").order("created_at"),
+      supabase.from("debts").select("*").eq("active", true).order("created_at"),
       supabase.from("budgets").select("*").order("month", { ascending: false }),
       supabase.from("profiles").select("display_name").eq("id", session!.user.id).maybeSingle(),
+      supabase.from("investments").select("*").order("balance", { ascending: false }),
+      supabase.from("financial_goals").select("*").eq("active", true).order("priority"),
+      supabase.from("annual_funds").select("*").eq("active", true).order("due_month"),
+      supabase.from("financial_assets").select("*").eq("active", true).order("value", { ascending: false }),
+      supabase.from("financial_snapshots").select("*").order("reference_month"),
     ]);
     const error = [accounts, categories, transactions, cards, debts, budgets, profile].find((result) => result.error)?.error;
     if (error) { showToast("Não foi possível carregar os dados. Confira a migração do Supabase."); setLoadingData(false); return; }
     setData({
       accounts: (accounts.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, initialBalance: Number(item.initial_balance), color: item.color, active: item.active })),
-      categories: (categories.data ?? []).map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind })),
+      categories: (categories.data ?? []).map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind, spendingClass: item.spending_class ?? undefined, incomeClass: item.income_class ?? undefined })),
       transactions: (transactions.data ?? []).map(fromDbTransaction),
       cards: (cards.data ?? []).map((item) => ({ id: item.id, name: item.name, brand: item.brand ?? "", lastDigits: item.last_digits ?? "", limit: Number(item.credit_limit), closingDay: item.closing_day, dueDay: item.due_day, color: item.color })),
-      debts: (debts.data ?? []).map((item) => ({ id: item.id, name: item.name, creditor: item.creditor, type: item.type, originalAmount: Number(item.original_amount), outstandingBalance: Number(item.outstanding_balance), monthlyInterest: Number(item.monthly_interest), minimumPayment: Number(item.minimum_payment), dueDay: item.due_day })),
+      debts: (debts.data ?? []).map((item) => ({ id: item.id, name: item.name, creditor: item.creditor, type: item.type, originalAmount: Number(item.original_amount), outstandingBalance: Number(item.outstanding_balance), monthlyInterest: Number(item.monthly_interest), minimumPayment: Number(item.minimum_payment), dueDay: item.due_day, annualCet: item.annual_cet == null ? undefined : Number(item.annual_cet), totalInstallments: item.total_installments ?? undefined, paidInstallments: item.paid_installments ?? undefined, remainingInstallments: item.remaining_installments ?? undefined, contractEndDate: item.contract_end_date ?? undefined, source: item.source ?? "manual" })),
       budgets: (budgets.data ?? []).map((item) => ({ id: item.id, categoryId: item.category_id, month: item.month, limit: Number(item.spending_limit) })),
+      investments: (investments.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, balance: Number(item.balance), quantity: item.quantity == null ? undefined : Number(item.quantity), unitValue: item.unit_value == null ? undefined : Number(item.unit_value), annualRate: item.annual_rate == null ? undefined : Number(item.annual_rate), dueDate: item.due_date ?? undefined, subtype: item.metadata?.subtype ?? undefined, status: item.metadata?.status ?? undefined, amountProfit: item.metadata?.amountProfit == null ? undefined : Number(item.metadata.amountProfit) })),
+      goals: (goals.data ?? []).map((item) => ({ id: item.id, name: item.name, targetAmount: Number(item.target_amount), currentAmount: Number(item.current_amount), targetDate: item.target_date ?? undefined, priority: item.priority, kind: item.kind })),
+      annualFunds: (annualFunds.data ?? []).map((item) => ({ id: item.id, name: item.name, targetAmount: Number(item.target_amount), currentAmount: Number(item.current_amount), dueMonth: item.due_month })),
+      assets: (assets.data ?? []).map((item) => ({ id: item.id, name: item.name, type: item.type, value: Number(item.value) })),
+      snapshots: (snapshots.data ?? []).map((item) => ({ id: item.id, referenceMonth: item.reference_month, accountsTotal: Number(item.accounts_total), investmentsTotal: Number(item.investments_total), assetsTotal: Number(item.assets_total), debtsTotal: Number(item.debts_total), netWorth: Number(item.net_worth) })),
     });
     setDisplayName(profile.data?.display_name || session?.user.email?.split("@")[0] || "Usuário");
     setAiInstructions(typeof session?.user.user_metadata?.ai_instructions === "string" ? session.user.user_metadata.ai_instructions : "");
     setLoadingData(false);
+  }
+
+  async function bootstrapFinanceData() {
+    await loadFinanceData();
+    if (autoSyncAttempted.current) return;
+    autoSyncAttempted.current = true;
+    try {
+      const response = await apiFetch("/api/pluggy-connections");
+      const result = await response.json().catch(() => ({})) as { connections?: Array<{ id: string; status?: string; lastSyncedAt?: string | null }> };
+      if (!response.ok) return;
+      const staleBefore = Date.now() - 6 * 60 * 60 * 1000;
+      const stale = (result.connections ?? []).filter((item) => item.status === "active" && (!item.lastSyncedAt || new Date(item.lastSyncedAt).getTime() < staleBefore));
+      for (const connection of stale) {
+        await apiFetch("/api/pluggy-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ connectionId: connection.id }) });
+      }
+      if (stale.length) await loadFinanceData();
+    } catch {
+      // A sincronização manual continua disponível em Configurações.
+    }
   }
 
   function showToast(message: string) {
@@ -395,6 +435,55 @@ export default function App() {
     showToast("Limites mensais atualizados.");
   }
 
+  async function classifyCategory(id: string, value: string) {
+    const category = data.categories.find((item) => item.id === id);
+    if (!category) return;
+    setData((current) => ({ ...current, categories: current.categories.map((item) => item.id === id ? { ...item, ...(item.kind === "income" ? { incomeClass: value as "recurring" | "eventual" } : { spendingClass: value as "essential" | "fixed" | "flexible" | "eventual" }) } : item) }));
+    if (supabase && session && !demo) {
+      const changes = category.kind === "income" ? { income_class: value } : { spending_class: value };
+      const { error } = await supabase.from("categories").update(changes).eq("id", id);
+      if (error) { await loadFinanceData(); showToast("Não foi possível classificar. Rode a migration 003."); return; }
+    }
+    showToast("Classificação financeira atualizada.");
+  }
+
+  async function addGoal(input: GoalInput) {
+    const item = { id: crypto.randomUUID(), ...input };
+    setData((current) => ({ ...current, goals: [...(current.goals ?? []), item] }));
+    if (supabase && session && !demo) {
+      const { error } = await supabase.from("financial_goals").insert({ id: item.id, user_id: session.user.id, name: item.name, target_amount: item.targetAmount, current_amount: item.currentAmount, target_date: item.targetDate || null, priority: item.priority, kind: item.kind });
+      if (error) { await loadFinanceData(); showToast("Não foi possível salvar a meta. Rode a migration 003."); return; }
+    }
+    showToast("Meta financeira adicionada.");
+  }
+
+  async function addAnnualFund(input: FundInput) {
+    const item = { id: crypto.randomUUID(), ...input };
+    setData((current) => ({ ...current, annualFunds: [...(current.annualFunds ?? []), item] }));
+    if (supabase && session && !demo) {
+      const { error } = await supabase.from("annual_funds").insert({ id: item.id, user_id: session.user.id, name: item.name, target_amount: item.targetAmount, current_amount: item.currentAmount, due_month: item.dueMonth });
+      if (error) { await loadFinanceData(); showToast("Não foi possível salvar o fundo anual. Rode a migration 003."); return; }
+    }
+    showToast("Fundo anual adicionado.");
+  }
+
+  async function addAsset(input: AssetInput) {
+    const item = { id: crypto.randomUUID(), ...input };
+    setData((current) => ({ ...current, assets: [...(current.assets ?? []), item] }));
+    if (supabase && session && !demo) {
+      const { error } = await supabase.from("financial_assets").insert({ id: item.id, user_id: session.user.id, name: item.name, type: item.type, value: item.value });
+      if (error) { await loadFinanceData(); showToast("Não foi possível salvar o ativo. Rode a migration 003."); return; }
+    }
+    showToast("Ativo adicionado ao patrimônio.");
+  }
+
+  function toggleValues() {
+    setHideValues((current) => {
+      localStorage.setItem("weber-financeiro:hide-values", String(!current));
+      return !current;
+    });
+  }
+
   async function signOut() {
     if (supabase && session) await supabase.auth.signOut();
     if (isSupabaseConfigured) {
@@ -409,10 +498,10 @@ export default function App() {
   if (!authReady) return <div className="app-loading"><img className="loading-logo" src="/brand/weber-symbol-square.png" alt="" /><strong>Weber Financeiro</strong><small>Preparando seus dados...</small></div>;
   if (isSupabaseConfigured && !session && !demo) return <AuthScreen onDemo={() => setDemo(true)} />;
 
-  return <div className="app-shell">
+  return <div className={`app-shell ${hideValues ? "privacy-mode" : ""}`}>
     <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
       <div className="sidebar-brand"><div className="brand"><img className="brand-logo sidebar-brand-logo" src="/brand/weber-financeiro-dark.png" alt="Weber Financeiro" /></div><button className="icon-btn mobile-only" onClick={() => setMenuOpen(false)}><X size={20} /></button></div>
-      <nav>{nav.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => { setPage(item.id); setMenuOpen(false); }}><item.icon size={19} /><span>{item.label}</span>{item.id === "debts" && <i>{data.debts.length}</i>}</button>)}</nav>
+      <nav>{nav.map((item, index) => <div className="sidebar-nav-item" key={item.id}>{(index === 0 || nav[index - 1].group !== item.group) && <span className="sidebar-nav-label">{item.group}</span>}<button className={page === item.id ? "active" : ""} onClick={() => { setPage(item.id); setMenuOpen(false); }}><item.icon size={19} /><span>{item.label}</span>{item.id === "debts" && <i>{data.debts.length}</i>}</button></div>)}</nav>
       <div className="sidebar-bottom"><button className={page === "settings" ? "active" : ""} onClick={() => { setPage("settings"); setMenuOpen(false); }}><Settings size={19} /><span>Configurações</span></button><div className="sidebar-help"><Bot size={22} /><strong>Precisa de ajuda?</strong><span>Converse com a Weber IA</span><button onClick={() => setChatOpen(true)}>Abrir assistente</button></div><div className="sidebar-user"><span>{displayName.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span><div><strong>{displayName}</strong><small>{demo ? "Modo demonstração" : session?.user.email}</small></div><ChevronDown size={16} /></div></div>
     </aside>
     {menuOpen && <button className="menu-overlay" onClick={() => setMenuOpen(false)} />}
@@ -420,17 +509,20 @@ export default function App() {
     <main className="main-area">
       <header className="topbar">
         <button className="icon-btn mobile-only" onClick={() => setMenuOpen(true)}><Menu size={21} /></button>
-        <label className="month-picker"><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} /></label>
-        <div className="topbar-actions"><button className="search-trigger" onClick={() => setPage("transactions")}><Search size={18} /><span>Buscar transação...</span><kbd>Ctrl K</kbd></button>{demo && <span className="demo-badge">Demonstração</span>}<button className="icon-btn notification" title="Ver pendências" onClick={() => setPage("transactions")}><Bell size={19} /><i /></button><button className="ai-button" onClick={() => setChatOpen(true)}><SparkIcon /><span>Weber IA</span></button></div>
+        <label className="month-picker"><span>Período</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} /></label>
+        <div className="topbar-actions"><button className="search-trigger" onClick={() => setPage("transactions")}><Search size={18} /><span>Buscar transação...</span><kbd>Ctrl K</kbd></button>{demo && <span className="demo-badge">Demonstração</span>}<button className="icon-btn" title={hideValues ? "Mostrar valores" : "Ocultar valores"} onClick={toggleValues}>{hideValues ? <EyeOff size={19} /> : <Eye size={19} />}</button><button className="icon-btn notification" title="Ver pendências" onClick={() => setPage("transactions")}><Bell size={19} /><i /></button><button className="ai-button" onClick={() => setChatOpen(true)}><SparkIcon /><span>Weber IA</span></button></div>
       </header>
       <div className={`page-content ${loadingData ? "loading" : ""}`}>
+        {page === "today" && <Suspense fallback={<div className="route-loading">Preparando seu dia...</div>}><TodayPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onNavigate={(value) => setPage(value as Page)} /></Suspense>}
         {page === "dashboard" && <Dashboard data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} userName={displayName} onAdd={() => { setDraft(null); setAddOpen(true); }} onNavigate={(value) => setPage(value as Page)} />}
+        {page === "planning" && <Suspense fallback={<div className="route-loading">Calculando seu plano...</div>}><PlanningPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onAddGoal={addGoal} onAddFund={addAnnualFund} /></Suspense>}
+        {page === "patrimony" && <Suspense fallback={<div className="route-loading">Consolidando patrimônio...</div>}><PatrimonyPage data={data} onAddAsset={addAsset} /></Suspense>}
         {page === "transactions" && <TransactionsPage data={data} month={selectedMonth} onAdd={() => { setDraft(null); setAddOpen(true); }} onMarkPaid={markPaid} onEdit={(item) => openTransactionEdit(item)} onDelete={setDeletingTransaction} />}
         {page === "accounts" && <AccountsPage data={data} onAdd={() => setEntityModal("account")} onAdjust={setAdjustingAccount} />}
         {page === "cards" && <CardsPage data={data} month={selectedMonth} onAdd={() => setEntityModal("card")} />}
         {page === "debts" && <DebtsPage data={data} onAdd={() => setEntityModal("debt")} />}
         {page === "reports" && <Suspense fallback={<div className="route-loading">Preparando relatórios...</div>}><ReportsPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} /></Suspense>}
-        {page === "settings" && <SettingsPage data={data} displayName={displayName} aiInstructions={aiInstructions} email={session?.user.email} demo={demo} month={selectedMonth} onSaveProfile={saveProfile} onAddCategory={addCategory} onDeleteCategory={deleteCategory} onSaveBudgets={saveBudgets} onSignOut={signOut} />}
+        {page === "settings" && <SettingsPage data={data} displayName={displayName} aiInstructions={aiInstructions} email={session?.user.email} demo={demo} month={selectedMonth} onSaveProfile={saveProfile} onAddCategory={addCategory} onDeleteCategory={deleteCategory} onClassifyCategory={classifyCategory} onSaveBudgets={saveBudgets} onDataChanged={loadFinanceData} onSignOut={signOut} />}
       </div>
     </main>
 

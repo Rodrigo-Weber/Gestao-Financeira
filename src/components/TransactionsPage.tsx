@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CheckCircle2, CircleDollarSign, Filter, Pencil, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { CheckCircle2, CircleDollarSign, Filter, Pencil, Plus, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { FinanceData, Transaction } from "../types";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
@@ -16,7 +16,7 @@ export function TransactionsPage({ data, month, onAdd, onMarkPaid, onEdit, onDel
   }).sort((a, b) => b.dueDate.localeCompare(a.dueDate)), [data.transactions, month, query, filter]);
 
   return <div className="page-stack">
-    <section className="page-title"><div><span className="eyebrow">Histórico completo</span><h1>Transações</h1><p>Encontre, filtre e acompanhe cada movimento do seu dinheiro.</p></div><button className="primary-btn" onClick={onAdd}>+ Novo lançamento</button></section>
+    <section className="page-title"><div><span className="eyebrow">Histórico completo</span><h1>Transações</h1><p>Encontre, filtre e acompanhe cada movimento do seu dinheiro.</p></div><button className="primary-btn" onClick={onAdd}><Plus size={18} /> Novo lançamento</button></section>
     <article className="panel table-panel">
       <div className="table-tools"><div className="search-box"><Search size={18} /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar transação..." autoFocus /></div><div className="filter-tabs"><button className={filter === "all" ? "active" : ""} onClick={() => setFilter("all")}>Todas</button><button className={filter === "paid" ? "active" : ""} onClick={() => setFilter("paid")}>Pagas</button><button className={filter === "pending" ? "active" : ""} onClick={() => setFilter("pending")}>Pendentes</button></div><button className={`filter-button ${filter === "overdue" ? "active" : ""}`} onClick={() => setFilter(filter === "overdue" ? "all" : "overdue")}><SlidersHorizontal size={17} /> Atrasadas</button></div>
       <div className="transaction-table">

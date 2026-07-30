@@ -18,6 +18,8 @@ export interface Category {
   icon: string;
   color: string;
   kind: "income" | "expense";
+  spendingClass?: "essential" | "fixed" | "flexible" | "eventual";
+  incomeClass?: "recurring" | "eventual";
 }
 
 export interface Transaction {
@@ -41,7 +43,7 @@ export interface Transaction {
   notes?: string;
   attachmentPath?: string;
   paymentMethod?: PaymentMethod;
-  source: "manual" | "chat" | "audio" | "ocr";
+  source: "manual" | "chat" | "audio" | "ocr" | "pluggy";
 }
 
 export interface CreditCard {
@@ -65,6 +67,62 @@ export interface Debt {
   monthlyInterest: number;
   minimumPayment: number;
   dueDay: number;
+  annualCet?: number;
+  totalInstallments?: number;
+  paidInstallments?: number;
+  remainingInstallments?: number;
+  contractEndDate?: string;
+  source?: "manual" | "pluggy";
+}
+
+export interface Investment {
+  id: string;
+  name: string;
+  institution: string;
+  type: string;
+  balance: number;
+  quantity?: number;
+  unitValue?: number;
+  annualRate?: number;
+  dueDate?: string;
+  subtype?: string;
+  status?: string;
+  amountProfit?: number;
+}
+
+export interface FinancialGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate?: string;
+  priority: 1 | 2 | 3;
+  kind: "goal" | "emergency";
+}
+
+export interface AnnualFund {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  dueMonth: number;
+}
+
+export interface FinancialAsset {
+  id: string;
+  name: string;
+  type: "property" | "vehicle" | "business" | "cash" | "other";
+  value: number;
+}
+
+export interface FinancialSnapshot {
+  id: string;
+  referenceMonth: string;
+  accountsTotal: number;
+  investmentsTotal: number;
+  assetsTotal: number;
+  debtsTotal: number;
+  netWorth: number;
 }
 
 export interface Budget {
@@ -94,4 +152,9 @@ export interface FinanceData {
   cards: CreditCard[];
   debts: Debt[];
   budgets: Budget[];
+  investments?: Investment[];
+  goals?: FinancialGoal[];
+  annualFunds?: AnnualFund[];
+  assets?: FinancialAsset[];
+  snapshots?: FinancialSnapshot[];
 }
