@@ -1,8 +1,8 @@
 import { useMemo } from "react";
-import { Area, AreaChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, CreditCard, PiggyBank, TrendingDown, Wallet } from "lucide-react";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { ArrowDownRight, ArrowUpRight, CalendarClock, CheckCircle2, ChevronRight, CreditCard, Gauge, PiggyBank, Target, TrendingDown, Wallet, WalletCards } from "lucide-react";
 import type { FinanceData } from "../types";
-import { calculateSummary, cashFlowSeries, categorySpend } from "../lib/finance";
+import { accountBalance, calculateSummary, cashFlowSeries, categorySpend, monthTransactions } from "../lib/finance";
 
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const short = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
@@ -25,6 +25,29 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
   const categoryTotal = categories.reduce((sum, item) => sum + item.value, 0);
   const card = data.cards[0];
   const cardUsed = data.transactions.filter((item) => item.cardId === card?.id && item.kind === "card_purchase" && item.competenceDate.startsWith(monthKey)).reduce((sum, item) => sum + item.amount, 0);
+  const monthItems = useMemo(() => monthTransactions(data.transactions, month), [data.transactions, month]);
+  const totalIncome = summary.realizedIncome + summary.pendingIncome;
+  const totalExpense = summary.realizedExpense + summary.pendingExpense;
+  const savingsRate = totalIncome ? Math.round((totalIncome - totalExpense) / totalIncome * 100) : 0;
+  const budgetOverview = data.budgets.filter((item) => item.month === monthKey).map((budget) => {
+    const category = data.categories.find((item) => item.id === budget.categoryId);
+    const spent = categories.find((item) => item.name === category?.name)?.value ?? 0;
+    return { name: category?.name ?? "Categoria", color: category?.color ?? "#8c9792", spent, limit: budget.limit, percent: budget.limit ? Math.round(spent / budget.limit * 100) : 0 };
+  }).sort((a, b) => b.percent - a.percent).slice(0, 4);
+  const accountAllocation = data.accounts.map((account) => ({
+    name: account.name,
+    value: Math.max(0, accountBalance(data, account.id)),
+    fill: account.color,
+  })).sort((a, b) => b.value - a.value).slice(0, 4);
+  const paidCount = monthItems.filter((item) => item.status === "paid").length;
+  const attentionCount = monthItems.filter((item) => item.status === "overdue").length;
+  const pendingCount = monthItems.filter((item) => item.status === "pending").length;
+  const statusData = [
+    { name: "Pagas", value: paidCount, color: "#15976e" },
+    { name: "Pendentes", value: pendingCount, color: "#e6a93f" },
+    { name: "Atrasadas", value: attentionCount, color: "#e76f51" },
+  ].filter((item) => item.value > 0);
+  const resolvedPercent = monthItems.length ? Math.round(paidCount / monthItems.length * 100) : 100;
 
   return <div className="page-stack">
     <section className="welcome-row">
@@ -37,6 +60,13 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
       <MetricCard label="Saldo projetado" value={summary.projectedBalance} helper="Até o fim do mês" tone="navy" icon={<PiggyBank size={19} />} />
       <MetricCard label="Receitas" value={summary.realizedIncome + summary.pendingIncome} helper={`${brl.format(summary.pendingIncome)} a receber`} tone="light" icon={<ArrowUpRight size={19} />} />
       <MetricCard label="Despesas" value={summary.realizedExpense + summary.pendingExpense} helper={`${brl.format(summary.pendingExpense)} ainda previstas`} tone="light" icon={<ArrowDownRight size={19} />} />
+    </section>
+
+    <section className="financial-pulse" aria-label="Indicadores rápidos">
+      <div><span className="pulse-icon green"><Gauge size={17} /></span><span><small>Taxa de economia</small><strong className={savingsRate < 0 ? "negative" : ""}>{savingsRate}%</strong></span></div>
+      <div><span className="pulse-icon blue"><Target size={17} /></span><span><small>Orçamentos no limite</small><strong>{budgetOverview.filter((item) => item.percent <= 100).length} de {budgetOverview.length || 0}</strong></span></div>
+      <div><span className="pulse-icon amber"><CalendarClock size={17} /></span><span><small>Contas por resolver</small><strong>{pendingCount + attentionCount}</strong></span></div>
+      <div><span className="pulse-icon violet"><WalletCards size={17} /></span><span><small>Contas conectadas</small><strong>{data.accounts.length}</strong></span></div>
     </section>
 
     <section className="dashboard-grid">
@@ -66,11 +96,55 @@ export function Dashboard({ data, month, userName, onAdd, onNavigate }: { data: 
         <div className="category-content">
           <div className="donut-wrap">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart><Pie data={categories} innerRadius={56} outerRadius={77} paddingAngle={3} dataKey="value" stroke="none">{categories.map((entry) => <Cell fill={entry.color} key={entry.name} />)}</Pie></PieChart>
+              <PieChart><Pie data={categories} innerRadius={56} outerRadius={77} paddingAngle={3} dataKey="value" stroke="none">{categories.map((entry) => <Cell fill={entry.color} key={entry.name} />)}</Pie><Tooltip formatter={(value) => brl.format(Number(value))} /></PieChart>
             </ResponsiveContainer>
             <div className="donut-label"><small>Total</small><strong>{short.format(categoryTotal)}</strong></div>
           </div>
           <div className="category-list">{categories.slice(0, 4).map((item) => <div key={item.name}><span className="category-color" style={{ background: item.color }} /><span>{item.name}</span><strong>{brl.format(item.value)}</strong><small>{categoryTotal ? Math.round(item.value / categoryTotal * 100) : 0}%</small></div>)}</div>
+        </div>
+      </article>
+    </section>
+
+    <section className="analytics-grid">
+      <article className="panel budget-overview">
+        <div className="panel-heading"><div><span className="eyebrow">Planejado x realizado</span><h2>Saúde dos orçamentos</h2></div><button className="text-action" onClick={() => onNavigate("settings")}>Ajustar limites</button></div>
+        <div className="budget-overview-list">
+          {budgetOverview.map((item) => <div key={item.name}>
+            <div><span><i style={{ background: item.color }} />{item.name}</span><strong>{brl.format(item.spent)} <small>/ {brl.format(item.limit)}</small></strong></div>
+            <div className={`progress large ${item.percent > 100 ? "danger" : ""}`}><span style={{ width: `${Math.min(100, item.percent)}%`, background: item.color }} /></div>
+            <small className={item.percent > 100 ? "danger-text" : ""}>{item.percent}% usado</small>
+          </div>)}
+          {!budgetOverview.length && <div className="compact-empty"><Target size={22} /><span>Defina limites para acompanhar seus gastos.</span></div>}
+        </div>
+      </article>
+
+      <article className="panel allocation-panel">
+        <div className="panel-heading"><div><span className="eyebrow">Dinheiro disponível</span><h2>Saldo por conta</h2></div><button className="text-action" onClick={() => onNavigate("accounts")}>Ver contas</button></div>
+        <div className="allocation-chart">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={accountAllocation} layout="vertical" margin={{ left: 2, right: 26, top: 8, bottom: 0 }}>
+              <CartesianGrid stroke="#edf1ef" horizontal={false} />
+              <XAxis type="number" hide />
+              <YAxis type="category" dataKey="name" width={92} axisLine={false} tickLine={false} tick={{ fill: "#66746e", fontSize: 10 }} />
+              <Tooltip formatter={(value) => brl.format(Number(value))} cursor={{ fill: "#f7faf8" }} />
+              <Bar dataKey="value" radius={[0, 7, 7, 0]} barSize={16}>{accountAllocation.map((entry) => <Cell key={entry.name} fill={entry.fill} />)}</Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </article>
+
+      <article className="panel status-panel">
+        <div className="panel-heading"><div><span className="eyebrow">Ritmo do mês</span><h2>Compromissos</h2></div></div>
+        <div className="status-content">
+          <div className="status-donut">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart><Pie data={statusData} dataKey="value" innerRadius={46} outerRadius={62} paddingAngle={4} stroke="none">{statusData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}</Pie></PieChart>
+            </ResponsiveContainer>
+            <div><strong>{resolvedPercent}%</strong><small>resolvido</small></div>
+          </div>
+          <div className="status-legend">
+            {[{ label: "Pagas", value: paidCount, color: "#15976e" }, { label: "Pendentes", value: pendingCount, color: "#e6a93f" }, { label: "Atrasadas", value: attentionCount, color: "#e76f51" }].map((item) => <div key={item.label}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.value}</strong></div>)}
+          </div>
         </div>
       </article>
     </section>
