@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail, WalletCards } from "lucide-react";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, Mail } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
 interface Props {
@@ -40,8 +40,7 @@ export function AuthScreen({ onDemo }: Props) {
     <main className="auth-shell">
       <section className="auth-showcase">
         <div className="brand brand-light">
-          <span className="brand-mark"><WalletCards size={22} /></span>
-          <span>Weber <strong>Financeiro</strong></span>
+          <img className="brand-logo auth-brand-logo" src="/brand/weber-financeiro-light.png" alt="Weber Financeiro" />
         </div>
         <div className="auth-copy">
           <span className="eyebrow light">Controle financeiro sem complicação</span>

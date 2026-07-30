@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="public/brand/original-badge-dark.png" alt="Weber Financeiro" width="520" />
+
 # Weber Financeiro
 
 ### Finanças pessoais rápidas, visuais e assistidas por IA
@@ -15,6 +17,19 @@ Organize contas, cartões, dívidas e fluxo de caixa sem depender de Open Financ
 </div>
 
 ---
+
+## Identidade visual
+
+Os arquivos da marca estão disponíveis em [`public/brand`](public/brand):
+
+- [`logos.png`](logos.png): prancha original preservada no repositório;
+- `weber-financeiro-dark.png`: assinatura horizontal transparente para fundos claros;
+- `weber-financeiro-light.png`: assinatura horizontal transparente para fundos escuros;
+- `weber-symbol.png`: símbolo transparente sem texto;
+- `weber-symbol-square.png`: símbolo em tela quadrada para favicon e atalhos;
+- `original-*.png`: quatro recortes sem redimensionamento da prancha original.
+
+Os recortes `original-*` preservam os pixels e a resolução da imagem fornecida, sem compressão com perdas.
 
 ## Sobre o projeto
 

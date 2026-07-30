@@ -406,12 +406,12 @@ export default function App() {
     }
   }
 
-  if (!authReady) return <div className="app-loading"><span className="brand-mark"><WalletCards /></span><strong>Weber Financeiro</strong><small>Preparando seus dados...</small></div>;
+  if (!authReady) return <div className="app-loading"><img className="loading-logo" src="/brand/weber-symbol-square.png" alt="" /><strong>Weber Financeiro</strong><small>Preparando seus dados...</small></div>;
   if (isSupabaseConfigured && !session && !demo) return <AuthScreen onDemo={() => setDemo(true)} />;
 
   return <div className="app-shell">
     <aside className={`sidebar ${menuOpen ? "open" : ""}`}>
-      <div className="sidebar-brand"><div className="brand"><span className="brand-mark"><WalletCards size={21} /></span><span>Weber <strong>Financeiro</strong></span></div><button className="icon-btn mobile-only" onClick={() => setMenuOpen(false)}><X size={20} /></button></div>
+      <div className="sidebar-brand"><div className="brand"><img className="brand-logo sidebar-brand-logo" src="/brand/weber-financeiro-dark.png" alt="Weber Financeiro" /></div><button className="icon-btn mobile-only" onClick={() => setMenuOpen(false)}><X size={20} /></button></div>
       <nav>{nav.map((item) => <button key={item.id} className={page === item.id ? "active" : ""} onClick={() => { setPage(item.id); setMenuOpen(false); }}><item.icon size={19} /><span>{item.label}</span>{item.id === "debts" && <i>{data.debts.length}</i>}</button>)}</nav>
       <div className="sidebar-bottom"><button className={page === "settings" ? "active" : ""} onClick={() => { setPage("settings"); setMenuOpen(false); }}><Settings size={19} /><span>Configurações</span></button><div className="sidebar-help"><Bot size={22} /><strong>Precisa de ajuda?</strong><span>Converse com a Weber IA</span><button onClick={() => setChatOpen(true)}>Abrir assistente</button></div><div className="sidebar-user"><span>{displayName.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</span><div><strong>{displayName}</strong><small>{demo ? "Modo demonstração" : session?.user.email}</small></div><ChevronDown size={16} /></div></div>
     </aside>
