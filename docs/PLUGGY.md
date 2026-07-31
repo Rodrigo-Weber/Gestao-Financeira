@@ -232,6 +232,12 @@ Transações usam a paginação cursor-based de `GET /v2/transactions`. `PENDING
 
 A tela **Recorrentes** usa dados locais e aplica os critérios descritos pela Pluggy: pelo menos três ocorrências, intervalo mensal aproximado (25–35 dias), variação de valor de até 10% e índice de regularidade. Ela não depende do recurso premium. Referência: [Recurring Payments Analysis](https://docs.pluggy.ai/docs/recurring-payments-1).
 
-## 15. Migration necessária
+## 15. Empréstimos
+
+Empréstimos são um produto separado da Pluggy e só aparecem quando a instituição conectada oferece cobertura de Loans. A sincronização consulta `GET /loans?itemId=...` e importa contrato, saldo devedor, CET anual, taxa, sistema de amortização, periodicidade, total de parcelas, parcelas pagas/restantes e parcelas vencidas. A tela **Dívidas** mostra esses dados e identifica a origem Pluggy. A documentação também prevê tarifas contratadas, garantias, pagamentos/releases e parcelas extraordinárias; esses detalhes ficam preservados no payload/metadata para uma próxima tela de contrato detalhado. Referências: [Loan](https://docs.pluggy.ai/docs/loans) e [Loans List](https://docs.pluggy.ai/reference/loans-list).
+
+Foi corrigida a leitura das grafias oficiais `firstInstalmentDueDate`, `instalmentPeriodicity` e `pastDueInstalments`, mantendo compatibilidade com payloads legados que usam a grafia alternativa.
+
+## 16. Migration necessária
 
 Execute `supabase/migrations/202607300004_pluggy_credit_details.sql` após as migrations anteriores. Ela adiciona metadados de limite e campos de fatura de forma aditiva, sem apagar dados existentes.
