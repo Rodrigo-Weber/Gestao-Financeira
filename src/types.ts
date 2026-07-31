@@ -1,4 +1,4 @@
-export type TransactionKind = "income" | "expense" | "transfer" | "card_purchase" | "invoice_payment" | "debt_payment";
+export type TransactionKind = "income" | "expense" | "transfer" | "card_purchase" | "card_credit" | "invoice_payment" | "debt_payment";
 export type TransactionStatus = "paid" | "pending" | "overdue" | "cancelled";
 export type PaymentMethod = "pix" | "debit" | "credit";
 
@@ -8,6 +8,8 @@ export interface Account {
   institution: string;
   type: "checking" | "cash" | "savings";
   initialBalance: number;
+  reportedBalance?: number;
+  lastSyncedAt?: string;
   color: string;
   active: boolean;
 }
@@ -42,6 +44,10 @@ export interface Transaction {
   installmentTotal?: number;
   notes?: string;
   attachmentPath?: string;
+  invoiceId?: string;
+  providerAmount?: number;
+  providerType?: string;
+  operationType?: string;
   paymentMethod?: PaymentMethod;
   source: "manual" | "chat" | "audio" | "ocr" | "pluggy";
 }
@@ -81,6 +87,24 @@ export interface CardInvoice {
   source?: "manual" | "pluggy";
 }
 
+export interface RecurringPreference {
+  id: string;
+  fingerprint: string;
+  alias?: string;
+  status: "detected" | "confirmed" | "ignored" | "cancelled";
+  kind: "income" | "expense";
+  expectedAmount?: number;
+  notes?: string;
+}
+
+export interface ExternalChange {
+  id: string;
+  entityType: string;
+  operation: "created" | "updated" | "deleted";
+  externalId?: string;
+  createdAt: string;
+}
+
 export interface Debt {
   id: string;
   name: string;
@@ -98,6 +122,10 @@ export interface Debt {
   pastDueInstallments?: number;
   contractEndDate?: string;
   source?: "manual" | "pluggy";
+  contractNumber?: string;
+  loanType?: string;
+  amortization?: string;
+  periodicity?: string;
 }
 
 export interface Investment {
@@ -176,6 +204,8 @@ export interface FinanceData {
   transactions: Transaction[];
   cards: CreditCard[];
   cardInvoices?: CardInvoice[];
+  recurringPreferences?: RecurringPreference[];
+  externalChanges?: ExternalChange[];
   debts: Debt[];
   budgets: Budget[];
   investments?: Investment[];

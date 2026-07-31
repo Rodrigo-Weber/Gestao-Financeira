@@ -248,3 +248,9 @@ Execute consultas administrativas somente em ambiente seguro. Não compartilhe r
 A migration `202607300004_pluggy_credit_details.sql` adiciona `credit_cards.used_limit` e `credit_cards.metadata`, além dos campos oficiais de faturas em `card_invoices` (`minimum_payment`, `paid_amount`, `payments`, `finance_charges`, `allows_installments` e `currency_code`). A coluna `closing_date` passa a aceitar nulo porque a Pluggy documenta esse campo como opcional.
 
 Execute a migration após `202607300003_financial_health.sql`. A Function de sincronização mantém os filtros por `user_id`, `connection_id` e `external_provider`, faz upsert idempotente por ID externo e limpa apenas faturas que deixaram de ser retornadas para aquela conexão.
+
+## 14. Migration 005 — confiabilidade e eventos
+
+`202607310005_financial_reliability.sql` cria `pluggy_webhook_events`, `recurring_pattern_preferences`, `financial_reconciliations` e `external_change_log`. Também amplia `transactions` com o valor assinado original, tipo/operation type do provedor, merchant e suporte a `card_credit`.
+
+As tabelas de leitura do usuário têm RLS por `user_id`. A fila de webhook é gravada e processada somente pelas Functions com service role. `event_id` único impede processamento duplicado durante as retentativas da Pluggy.

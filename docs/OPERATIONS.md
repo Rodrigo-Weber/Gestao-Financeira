@@ -29,6 +29,7 @@
 | `GROQ_TRANSCRIBE_MODEL` | Transcrição de áudio |
 | `PLUGGY_CLIENT_ID` | Identificação privada Pluggy |
 | `PLUGGY_CLIENT_SECRET` | Segredo privado Pluggy |
+| `PLUGGY_WEBHOOK_SECRET` | Segredo Bearer compartilhado somente entre Pluggy e Netlify |
 | `PLUGGY_BASE_URL` | Base da API Pluggy |
 | `PLUGGY_MODE` | Marcador sandbox/personal |
 
@@ -110,6 +111,8 @@ Em **Authentication → URL Configuration**:
 - [ ] Operações CRUD validadas.
 - [ ] RLS testado com dois usuários.
 - [ ] Pluggy testada no ambiente correto.
+- [ ] Webhook `https://weberfinanceiro.com.br/api/pluggy-webhook` cadastrado com header secreto.
+- [ ] Functions `pluggy-webhook-worker` e `pluggy-webhook-retry` visíveis na Netlify.
 - [ ] Exportações abertas e conferidas.
 - [ ] Layout conferido em desktop e celular.
 - [ ] Backup confirmado antes de mudanças de schema.

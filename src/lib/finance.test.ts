@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FinanceData } from "../types";
-import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, createInstallments, financialAlerts, getInvoiceDates, simulateDebtPayoff } from "./finance";
+import { accountBalance, calculateSpendingGuide, calculateSummary, cashFlowSeries, categorySpend, createInstallments, financialAlerts, getInvoiceDates, simulateDebtPayoff } from "./finance";
 
 const base: FinanceData = {
   accounts: [{ id: "a", name: "Conta", institution: "", type: "checking", initialBalance: 1000, color: "#000", active: true }],
@@ -141,5 +141,17 @@ describe("financial calculations", () => {
     };
     const alerts = financialAlerts(data, new Date(2026, 6, 1), new Date(2026, 6, 10));
     expect(alerts.some((item) => item.id === "budget-pace-budget" && item.severity === "attention")).toBe(true);
+  });
+
+  it("subtracts card refunds from category spending", () => {
+    const data: FinanceData = {
+      accounts: [], cards: [], debts: [], budgets: [],
+      categories: [{ id: "shop", name: "Compras", icon: "", color: "#f90", kind: "expense" }],
+      transactions: [
+        { id: "purchase", description: "Loja", amount: 200, kind: "card_purchase", status: "paid", dueDate: "2026-07-10", competenceDate: "2026-07-05", categoryId: "shop", source: "pluggy" },
+        { id: "refund", description: "Estorno loja", amount: 50, kind: "card_credit", status: "paid", dueDate: "2026-07-12", competenceDate: "2026-07-08", categoryId: "shop", source: "pluggy" },
+      ],
+    };
+    expect(categorySpend(data, new Date("2026-07-01T12:00:00"))[0].value).toBe(150);
   });
 });

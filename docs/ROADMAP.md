@@ -77,3 +77,16 @@
 - [x] Tela detalhada de cartões com fallback para conectores sem produto Bills.
 - [x] Tela dedicada de gastos e rendas recorrentes com critérios auditáveis.
 - [ ] Rodar a migration `202607300004_pluggy_credit_details.sql` no projeto Supabase.
+
+## Entrega de confiabilidade 31/07/2026
+
+- [x] Webhook Pluggy em Netlify com autenticação e idempotência.
+- [x] Background Function, retry agendado e lock de sincronização.
+- [x] Estornos, cashback e créditos de cartão.
+- [x] Compras vinculadas às faturas disponíveis.
+- [x] Central de conciliação e histórico externo.
+- [x] Preferências para recorrências detectadas.
+- [x] Calendário financeiro e comparativos recentes.
+- [x] Detalhamento contratual de empréstimos Pluggy.
+- [x] Lazy loading das novas rotas.
+- [ ] Rodar a migration `202607310005_financial_reliability.sql`.

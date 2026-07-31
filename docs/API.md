@@ -270,3 +270,8 @@ Ao adicionar uma rota:
 6. não retorne segredo ou erro interno;
 7. documente request, response e erros;
 8. adicione testes para transformação crítica.
+# Webhook Pluggy
+
+`POST /api/pluggy-webhook` é público e autenticado pelo header configurado em `PLUGGY_WEBHOOK_SECRET`. Responde `202` após persistir o evento. O processamento ocorre em `pluggy-webhook-worker`; `pluggy-webhook-retry` reprocessa eventos pendentes/erro a cada 15 minutos.
+
+O payload mínimo contém `event` e `eventId`; eventos de dados normalmente incluem `itemId`, `accountId` e/ou `transactionIds`.

@@ -7,7 +7,7 @@ const normalize = (value: string) => value.normalize("NFD").replace(/[\u0300-\u0
 
 function transactionFlow(transaction: Transaction) {
   if (transaction.kind === "income") return transaction.amount;
-  if (transaction.kind === "transfer" || transaction.kind === "card_purchase") return 0;
+  if (transaction.kind === "transfer" || transaction.kind === "card_purchase" || transaction.kind === "card_credit") return 0;
   return -transaction.amount;
 }
 
@@ -132,7 +132,7 @@ export interface RecurringInsight {
  */
 export function recurringInsights(data: FinanceData, reference = new Date()): RecurringInsight[] {
   const start = subMonths(startOfMonth(reference), 12);
-  const movements = data.transactions.filter((item) => item.status !== "cancelled" && item.kind !== "transfer" && item.kind !== "invoice_payment" && !isBefore(parseISO(item.competenceDate), start));
+  const movements = data.transactions.filter((item) => item.status !== "cancelled" && item.kind !== "transfer" && item.kind !== "invoice_payment" && item.kind !== "card_credit" && !isBefore(parseISO(item.competenceDate), start));
   const groups = new Map<string, Transaction[]>();
   movements.forEach((item) => {
     const key = normalize(item.description);

@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { addMonths, addYears, format, parseISO } from "date-fns";
-import { Bot, CalendarCheck2, ChartNoAxesCombined, ChevronDown, CreditCard, Eye, EyeOff, FileBarChart, LayoutDashboard, Menu, ReceiptText, Settings, Target, TrendingDown, WalletCards, X } from "lucide-react";
+import { Bot, CalendarCheck2, CalendarDays, ChartNoAxesCombined, ChevronDown, CreditCard, Eye, EyeOff, FileBarChart, LayoutDashboard, Menu, ReceiptText, Scale, Settings, Target, TrendingDown, WalletCards, X } from "lucide-react";
 import { AuthScreen } from "./components/AuthScreen";
 import { Dashboard } from "./components/Dashboard";
 import { TransactionsPage } from "./components/TransactionsPage";
@@ -12,7 +12,6 @@ import { ChatPanel, type SuggestedChanges } from "./components/ChatPanel";
 import { QuickAddModal } from "./components/QuickAddModal";
 import { EntityModal, type EntityKind, type EntityPayload } from "./components/EntityModal";
 import { SettingsPage } from "./components/SettingsPage";
-import { RecurringPage } from "./components/RecurringPage";
 import { TransactionDeleteModal, TransactionEditModal, type TransactionEditValues } from "./components/TransactionActionModals";
 import type { AssetInput, FundInput, GoalInput } from "./components/FinancialHealthPages";
 import { PeriodSelector, type PeriodMode } from "./components/PeriodSelector";
@@ -20,21 +19,26 @@ import { demoData } from "./lib/demoData";
 import { accountBalance, createInstallments } from "./lib/finance";
 import { apiFetch } from "./lib/api";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
-import type { Account, FinanceData, Transaction, TransactionDraft } from "./types";
+import type { Account, FinanceData, RecurringPreference, Transaction, TransactionDraft } from "./types";
 
-type Page = "today" | "dashboard" | "planning" | "patrimony" | "transactions" | "recurring" | "accounts" | "cards" | "debts" | "reports" | "settings";
+type Page = "today" | "dashboard" | "planning" | "patrimony" | "transactions" | "calendar" | "recurring" | "reconciliation" | "accounts" | "cards" | "debts" | "reports" | "settings";
 const ReportsPage = lazy(() => import("./components/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const TodayPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.TodayPage })));
 const PlanningPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.PlanningPage })));
 const PatrimonyPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.PatrimonyPage })));
+const RecurringPage = lazy(() => import("./components/RecurringPage").then((module) => ({ default: module.RecurringPage })));
+const CalendarPage = lazy(() => import("./components/ReliabilityPages").then((module) => ({ default: module.CalendarPage })));
+const ReconciliationPage = lazy(() => import("./components/ReliabilityPages").then((module) => ({ default: module.ReconciliationPage })));
 
 const nav = [
   { id: "today" as Page, label: "Hoje", icon: CalendarCheck2, group: "Dia a dia" },
   { id: "dashboard" as Page, label: "Visão geral", icon: LayoutDashboard, group: "Dia a dia" },
   { id: "transactions" as Page, label: "Transações", icon: ReceiptText, group: "Dia a dia" },
+  { id: "calendar" as Page, label: "Calendário", icon: CalendarDays, group: "Dia a dia" },
   { id: "planning" as Page, label: "Planejar", icon: Target, group: "Planejamento" },
   { id: "recurring" as Page, label: "Recorrentes", icon: ReceiptText, group: "Planejamento" },
   { id: "patrimony" as Page, label: "Patrimônio", icon: ChartNoAxesCombined, group: "Planejamento" },
+  { id: "reconciliation" as Page, label: "Conciliação", icon: Scale, group: "Gestão" },
   { id: "accounts" as Page, label: "Contas", icon: WalletCards, group: "Gestão" },
   { id: "cards" as Page, label: "Cartões", icon: CreditCard, group: "Gestão" },
   { id: "debts" as Page, label: "Dívidas", icon: TrendingDown, group: "Gestão" },
@@ -93,12 +97,14 @@ export default function App() {
   async function loadFinanceData() {
     if (!supabase) return;
     setLoadingData(true);
-    const [accounts, categories, transactions, cards, cardInvoices, debts, budgets, profile, investments, goals, annualFunds, assets, snapshots] = await Promise.all([
+    const [accounts, categories, transactions, cards, cardInvoices, recurringPreferences, externalChanges, debts, budgets, profile, investments, goals, annualFunds, assets, snapshots] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("categories").select("*").order("name"),
       supabase.from("transactions").select("*").order("due_date", { ascending: false }),
       supabase.from("credit_cards").select("*").order("created_at"),
       supabase.from("card_invoices").select("*").order("due_date", { ascending: false }),
+      supabase.from("recurring_pattern_preferences").select("*").order("updated_at", { ascending: false }),
+      supabase.from("external_change_log").select("id,entity_type,operation,external_id,created_at").order("created_at", { ascending: false }).limit(30),
       supabase.from("debts").select("*").eq("active", true).order("created_at"),
       supabase.from("budgets").select("*").order("month", { ascending: false }),
       supabase.from("profiles").select("display_name").eq("id", session!.user.id).maybeSingle(),
@@ -108,15 +114,17 @@ export default function App() {
       supabase.from("financial_assets").select("*").eq("active", true).order("value", { ascending: false }),
       supabase.from("financial_snapshots").select("*").order("reference_month"),
     ]);
-    const error = [accounts, categories, transactions, cards, cardInvoices, debts, budgets, profile].find((result) => result.error)?.error;
+    const error = [accounts, categories, transactions, cards, cardInvoices, recurringPreferences, externalChanges, debts, budgets, profile].find((result) => result.error)?.error;
     if (error) { showToast("Não foi possível carregar os dados. Confira a migração do Supabase."); setLoadingData(false); return; }
     setData({
-      accounts: (accounts.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, initialBalance: Number(item.initial_balance), color: item.color, active: item.active })),
+      accounts: (accounts.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, initialBalance: Number(item.initial_balance), reportedBalance: item.reported_balance == null ? undefined : Number(item.reported_balance), lastSyncedAt: item.reported_balance_at ?? item.imported_at ?? undefined, color: item.color, active: item.active })),
       categories: (categories.data ?? []).map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind, spendingClass: item.spending_class ?? undefined, incomeClass: item.income_class ?? undefined })),
       transactions: (transactions.data ?? []).map(fromDbTransaction),
       cards: (cards.data ?? []).map((item) => ({ id: item.id, name: item.name, brand: item.brand ?? "", lastDigits: item.last_digits ?? "", limit: Number(item.credit_limit), availableLimit: item.available_limit == null ? undefined : Number(item.available_limit), usedLimit: item.used_limit == null ? undefined : Number(item.used_limit), reportedBalance: item.reported_balance == null ? undefined : Number(item.reported_balance), minimumPayment: item.metadata?.minimumPayment == null ? undefined : Number(item.metadata.minimumPayment), isLimitFlexible: item.metadata?.isLimitFlexible ?? undefined, status: item.active ? (item.metadata?.status ?? "ACTIVE") : "CANCELLED", level: item.metadata?.level ?? undefined, holderType: item.metadata?.holderType ?? undefined, lastSyncedAt: item.reported_balance_at ?? item.imported_at ?? undefined, closingDay: item.closing_day, dueDay: item.due_day, color: item.color })),
       cardInvoices: (cardInvoices.data ?? []).map((item) => ({ id: item.id, cardId: item.card_id, referenceMonth: item.reference_month, closingDate: item.closing_date ?? undefined, dueDate: item.due_date, status: item.status, total: Number(item.total), minimumPayment: item.minimum_payment == null ? undefined : Number(item.minimum_payment), paidAmount: Number(item.paid_amount ?? 0), allowsInstallments: item.allows_installments ?? undefined, currencyCode: item.currency_code ?? "BRL", source: item.external_provider === "pluggy" ? "pluggy" : "manual" })),
-      debts: (debts.data ?? []).map((item) => ({ id: item.id, name: item.name, creditor: item.creditor, type: item.type, originalAmount: Number(item.original_amount), outstandingBalance: Number(item.outstanding_balance), monthlyInterest: Number(item.monthly_interest), minimumPayment: Number(item.minimum_payment), dueDay: item.due_day, annualCet: item.annual_cet == null ? undefined : Number(item.annual_cet), totalInstallments: item.total_installments ?? undefined, paidInstallments: item.paid_installments ?? undefined, remainingInstallments: item.remaining_installments ?? undefined, pastDueInstallments: item.metadata?.pastDueInstallments == null ? undefined : Number(item.metadata.pastDueInstallments), contractEndDate: item.contract_end_date ?? undefined, source: item.source ?? "manual" })),
+      recurringPreferences: (recurringPreferences.data ?? []).map((item) => ({ id: item.id, fingerprint: item.fingerprint, alias: item.alias ?? undefined, status: item.status, kind: item.kind, expectedAmount: item.expected_amount == null ? undefined : Number(item.expected_amount), notes: item.notes ?? undefined })),
+      externalChanges: (externalChanges.data ?? []).map((item) => ({ id: String(item.id), entityType: item.entity_type, operation: item.operation, externalId: item.external_id ?? undefined, createdAt: item.created_at })),
+      debts: (debts.data ?? []).map((item) => ({ id: item.id, name: item.name, creditor: item.creditor, type: item.type, originalAmount: Number(item.original_amount), outstandingBalance: Number(item.outstanding_balance), monthlyInterest: Number(item.monthly_interest), minimumPayment: Number(item.minimum_payment), dueDay: item.due_day, annualCet: item.annual_cet == null ? undefined : Number(item.annual_cet), totalInstallments: item.total_installments ?? undefined, paidInstallments: item.paid_installments ?? undefined, remainingInstallments: item.remaining_installments ?? undefined, pastDueInstallments: item.metadata?.pastDueInstallments == null ? undefined : Number(item.metadata.pastDueInstallments), contractEndDate: item.contract_end_date ?? undefined, source: item.source ?? "manual", contractNumber: item.metadata?.contractNumber ?? undefined, loanType: item.metadata?.loanType ?? undefined, amortization: item.metadata?.amortization ?? undefined, periodicity: item.metadata?.periodicity ?? undefined })),
       budgets: (budgets.data ?? []).map((item) => ({ id: item.id, categoryId: item.category_id, month: item.month, limit: Number(item.spending_limit) })),
       investments: (investments.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, balance: Number(item.balance), quantity: item.quantity == null ? undefined : Number(item.quantity), unitValue: item.unit_value == null ? undefined : Number(item.unit_value), annualRate: item.annual_rate == null ? undefined : Number(item.annual_rate), dueDate: item.due_date ?? undefined, subtype: item.metadata?.subtype ?? undefined, status: item.metadata?.status ?? undefined, amountProfit: item.metadata?.amountProfit == null ? undefined : Number(item.metadata.amountProfit) })),
       goals: (goals.data ?? []).map((item) => ({ id: item.id, name: item.name, targetAmount: Number(item.target_amount), currentAmount: Number(item.current_amount), targetDate: item.target_date ?? undefined, priority: item.priority, kind: item.kind })),
@@ -485,6 +493,17 @@ export default function App() {
     showToast("Ativo adicionado ao patrimônio.");
   }
 
+  async function saveRecurringPreference(input: Omit<RecurringPreference, "id">) {
+    const existing = data.recurringPreferences?.find((item) => item.fingerprint === input.fingerprint);
+    const item = { id: existing?.id ?? crypto.randomUUID(), ...input };
+    setData((current) => ({ ...current, recurringPreferences: [...(current.recurringPreferences ?? []).filter((entry) => entry.fingerprint !== input.fingerprint), item] }));
+    if (supabase && session && !demo) {
+      const { error } = await supabase.from("recurring_pattern_preferences").upsert({ id: item.id, user_id: session.user.id, fingerprint: item.fingerprint, alias: item.alias ?? null, status: item.status, kind: item.kind, expected_amount: item.expectedAmount ?? null, notes: item.notes ?? null }, { onConflict: "user_id,fingerprint" });
+      if (error) { await loadFinanceData(); showToast("Não foi possível salvar a preferência recorrente. Rode a migration 005."); return; }
+    }
+    showToast("Preferência de recorrência atualizada.");
+  }
+
   function toggleValues() {
     setHideValues((current) => {
       localStorage.setItem("weber-financeiro:hide-values", String(!current));
@@ -531,7 +550,9 @@ export default function App() {
         {page === "today" && <Suspense fallback={<div className="route-loading">Preparando seu dia...</div>}><TodayPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onNavigate={(value) => setPage(value as Page)} /></Suspense>}
         {page === "dashboard" && <Dashboard data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} userName={displayName} onAdd={() => { setDraft(null); setAddOpen(true); }} onNavigate={(value) => setPage(value as Page)} />}
         {page === "planning" && <Suspense fallback={<div className="route-loading">Calculando seu plano...</div>}><PlanningPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onAddGoal={addGoal} onAddFund={addAnnualFund} /></Suspense>}
-        {page === "recurring" && <RecurringPage data={data} />}
+        {page === "recurring" && <Suspense fallback={<div className="route-loading">Analisando recorrências...</div>}><RecurringPage data={data} onUpdate={saveRecurringPreference} /></Suspense>}
+        {page === "calendar" && <Suspense fallback={<div className="route-loading">Montando calendário...</div>}><CalendarPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} /></Suspense>}
+        {page === "reconciliation" && <Suspense fallback={<div className="route-loading">Conciliando dados...</div>}><ReconciliationPage data={data} /></Suspense>}
         {page === "patrimony" && <Suspense fallback={<div className="route-loading">Consolidando patrimônio...</div>}><PatrimonyPage data={data} onAddAsset={addAsset} /></Suspense>}
         {page === "transactions" && <TransactionsPage data={data} month={selectedMonth} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} onAdd={() => { setDraft(null); setAddOpen(true); }} onMarkPaid={markPaid} onEdit={(item) => openTransactionEdit(item)} onDelete={setDeletingTransaction} />}
         {page === "accounts" && <AccountsPage data={data} onAdd={() => setEntityModal("account")} onAdjust={setAdjustingAccount} />}
@@ -559,10 +580,10 @@ function fromDbTransaction(item: Record<string, any>): Transaction {
     id: item.id, description: item.description, amount: Number(item.amount), kind: item.kind, status: item.status,
     dueDate: item.due_date, paidDate: item.paid_date ?? undefined, competenceDate: item.competence_date,
     categoryId: item.category_id ?? undefined, accountId: item.account_id ?? undefined, destinationAccountId: item.destination_account_id ?? undefined, cardId: item.card_id ?? undefined,
-    debtId: item.debt_id ?? undefined, installmentGroupId: item.installment_group_id ?? undefined,
+    debtId: item.debt_id ?? undefined, invoiceId: item.invoice_id ?? undefined, installmentGroupId: item.installment_group_id ?? undefined,
     installmentNumber: item.installment_number ?? undefined, installmentTotal: item.installment_total ?? undefined,
     recurringRuleId: item.recurring_rule_id ?? undefined, notes: item.notes ?? undefined, attachmentPath: item.attachment_path ?? undefined,
-    paymentMethod: item.payment_method ?? undefined, source: item.source,
+    paymentMethod: item.payment_method ?? undefined, providerAmount: item.provider_amount == null ? undefined : Number(item.provider_amount), providerType: item.provider_type ?? undefined, operationType: item.operation_type ?? undefined, source: item.source,
   };
 }
 

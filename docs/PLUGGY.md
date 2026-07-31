@@ -241,3 +241,46 @@ Foi corrigida a leitura das grafias oficiais `firstInstalmentDueDate`, `instalme
 ## 16. Migration necessária
 
 Execute `supabase/migrations/202607300004_pluggy_credit_details.sql` após as migrations anteriores. Ela adiciona metadados de limite e campos de fatura de forma aditiva, sem apagar dados existentes.
+
+## 17. Webhook em produção (Netlify)
+
+Endpoint público:
+
+```text
+https://weberfinanceiro.com.br/api/pluggy-webhook
+```
+
+O domínio personalizado aponta para a mesma implantação Netlify; a Function `pluggy-webhook.mts` declara esse caminho público. O receptor valida `PLUGGY_WEBHOOK_SECRET`, registra o `eventId` de forma idempotente, dispara `pluggy-webhook-worker` como Background Function e responde `202` rapidamente. Uma Scheduled Function busca falhas a cada 15 minutos com backoff.
+
+Variável obrigatória na Netlify:
+
+```text
+PLUGGY_WEBHOOK_SECRET=<segredo-aleatorio-longo>
+```
+
+Cadastre o webhook pela API Pluggy, pois headers secretos só podem ser configurados via API:
+
+```json
+{
+  "url": "https://weberfinanceiro.com.br/api/pluggy-webhook",
+  "event": "all",
+  "headers": {
+    "Authorization": "Bearer <mesmo-PLUGGY_WEBHOOK_SECRET>"
+  }
+}
+```
+
+O request de criação é `POST https://api.pluggy.ai/webhooks` com a API Key Pluggy em `X-API-KEY`. A Pluggy exige HTTPS, resposta em menos de cinco segundos e pode entregar o mesmo evento até nove vezes; por isso `eventId` é único no banco. Eventos de item/transação disparam sincronização completa consistente; eventos de erro atualizam a conexão e ficam visíveis operacionalmente.
+
+## 18. Confiabilidade financeira
+
+A migration `202607310005_financial_reliability.sql` adiciona:
+
+- fila e histórico de webhooks;
+- lock contra sincronizações concorrentes;
+- valor/tipo original da transação;
+- `card_credit` para estornos, cashback e créditos;
+- preferências confirmadas, ignoradas ou canceladas de recorrências;
+- conciliações e histórico de alterações externas.
+
+Compras são vinculadas à fatura oficial quando a Pluggy fornece datas de fechamento. Créditos reduzem limite utilizado e gasto por categoria, sem serem tratados como nova despesa.

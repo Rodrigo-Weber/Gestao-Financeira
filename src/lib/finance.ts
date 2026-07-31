@@ -19,7 +19,7 @@ export function monthTransactions(transactions: Transaction[], month: Date, rang
 
 export function calculateSummary(data: FinanceData, month = new Date(), range?: DateRange) {
   const monthItems = monthTransactions(data.transactions, month, range);
-  const cashItems = monthItems.filter((item) => item.kind !== "card_purchase" && item.kind !== "transfer");
+  const cashItems = monthItems.filter((item) => item.kind !== "card_purchase" && item.kind !== "card_credit" && item.kind !== "transfer");
   const realizedIncome = cashItems.filter((item) => item.kind === "income" && item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
   const realizedExpense = cashItems.filter((item) => item.kind !== "income" && item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
   const pendingIncome = cashItems.filter((item) => item.kind === "income" && item.status !== "paid").reduce((sum, item) => sum + item.amount, 0);
@@ -31,7 +31,7 @@ export function calculateSummary(data: FinanceData, month = new Date(), range?: 
     ? (isAfter(rangeEnd, today) ? today : rangeEnd)
     : month.getFullYear() === today.getFullYear() && month.getMonth() === today.getMonth() ? today : endOfMonth(month);
   const historicalPaid = data.transactions.filter((item) => {
-    if (item.status !== "paid" || item.kind === "card_purchase" || item.kind === "transfer") return false;
+    if (item.status !== "paid" || item.kind === "card_purchase" || item.kind === "card_credit" || item.kind === "transfer") return false;
     return !isAfter(parseISO(item.paidDate ?? item.dueDate), cutoff);
   });
   const realizedBalance = openingBalance +
@@ -51,7 +51,7 @@ export function accountBalance(data: FinanceData, accountId: string, cutoff = ne
   const account = data.accounts.find((item) => item.id === accountId);
   if (!account) return 0;
   return data.transactions.reduce((balance, item) => {
-    if (item.status !== "paid" || item.kind === "card_purchase" || isAfter(parseISO(item.paidDate ?? item.dueDate), cutoff)) return balance;
+    if (item.status !== "paid" || item.kind === "card_purchase" || item.kind === "card_credit" || isAfter(parseISO(item.paidDate ?? item.dueDate), cutoff)) return balance;
     if (item.kind === "transfer") {
       if (item.accountId === accountId) return balance - item.amount;
       if (item.destinationAccountId === accountId) return balance + item.amount;
@@ -77,7 +77,7 @@ export function categorySpend(data: FinanceData, month = new Date(), range?: Dat
     .map((category) => ({
       name: category.name,
       color: category.color,
-      value: expenses.filter((item) => item.categoryId === category.id).reduce((sum, item) => sum + item.amount, 0),
+      value: expenses.filter((item) => item.categoryId === category.id).reduce((sum, item) => sum + (item.kind === "card_credit" ? -item.amount : item.amount), 0),
     }))
     .filter((item) => item.value > 0)
     .sort((a, b) => b.value - a.value);
@@ -86,7 +86,7 @@ export function categorySpend(data: FinanceData, month = new Date(), range?: Dat
 export function cashFlowSeries(data: FinanceData, month = new Date(), range?: DateRange) {
   const periodStart = range ? parseISO(range.start) : startOfMonth(month);
   const periodEnd = range ? parseISO(range.end) : endOfMonth(month);
-  const items = monthTransactions(data.transactions, month, range).filter((item) => item.kind !== "card_purchase" && item.kind !== "transfer");
+  const items = monthTransactions(data.transactions, month, range).filter((item) => item.kind !== "card_purchase" && item.kind !== "card_credit" && item.kind !== "transfer");
   const openingBalance = data.accounts.reduce((sum, account) => sum + accountBalance(data, account.id, subDays(periodStart, 1)), 0);
   const allDays = range
     ? eachDayOfInterval({ start: periodStart, end: periodEnd })
@@ -144,6 +144,7 @@ export function calculateSpendingGuide(data: FinanceData, referenceDate = new Da
       item.kind !== "income" &&
       item.kind !== "transfer" &&
       item.kind !== "card_purchase" &&
+      item.kind !== "card_credit" &&
       item.status !== "paid" &&
       item.status !== "cancelled" &&
       !isAfter(parseISO(item.dueDate), boundary),
@@ -241,8 +242,8 @@ export function financialAlerts(data: FinanceData, month = new Date(), reference
 
   data.cards.forEach((card) => {
     const used = data.transactions
-      .filter((item) => item.cardId === card.id && item.kind === "card_purchase" && item.status !== "cancelled" && item.competenceDate.startsWith(monthKey))
-      .reduce((sum, item) => sum + item.amount, 0);
+      .filter((item) => item.cardId === card.id && (item.kind === "card_purchase" || item.kind === "card_credit") && item.status !== "cancelled" && item.competenceDate.startsWith(monthKey))
+      .reduce((sum, item) => sum + (item.kind === "card_credit" ? -item.amount : item.amount), 0);
     const percent = card.limit ? Math.round(used / card.limit * 100) : 0;
     if (percent >= 90) {
       alerts.push({

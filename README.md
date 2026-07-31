@@ -209,6 +209,7 @@ Use `npm run dev` somente quando precisar do frontend sem Functions.
 | `npm run build` | Valida TypeScript e gera produção |
 | `npm run preview` | Abre uma prévia do build |
 | `npm test` | Executa todos os testes |
+| `npm run test:e2e` | Valida os fluxos principais no Chromium |
 | `npm run test:watch` | Executa testes em modo contínuo |
 
 ## Documentação
@@ -230,6 +231,7 @@ Antes de enviar alterações:
 
 ```bash
 npm test
+npm run test:e2e
 npm run build
 ```
 
@@ -246,6 +248,8 @@ Os testes cobrem regras sensíveis como:
 ## Estado do projeto
 
 A aplicação, o backend e o fluxo Pluggy estão implementados. O ambiente atual utiliza sandbox; dados bancários pessoais dependem da liberação de produção pela Pluggy e da configuração das credenciais seguras na Netlify.
+
+O webhook de produção usa `https://weberfinanceiro.com.br/api/pluggy-webhook`. Configure `PLUGGY_WEBHOOK_SECRET` na Netlify e aplique as migrations `202607300004_pluggy_credit_details.sql` e `202607310005_financial_reliability.sql` antes do deploy desta versão.
 
 Limitações conhecidas:
 

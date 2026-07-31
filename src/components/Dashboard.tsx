@@ -38,7 +38,7 @@ export function Dashboard({ data, month, range, userName, onAdd, onNavigate }: {
   const upcoming = data.transactions.filter((item) => matchesPeriod(item.dueDate) && item.status !== "paid" && item.status !== "cancelled").sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
   const categoryTotal = categories.reduce((sum, item) => sum + item.value, 0);
   const card = data.cards[0];
-  const cardUsed = data.transactions.filter((item) => item.cardId === card?.id && item.kind === "card_purchase" && matchesPeriod(item.competenceDate)).reduce((sum, item) => sum + item.amount, 0);
+  const cardUsed = data.transactions.filter((item) => item.cardId === card?.id && (item.kind === "card_purchase" || item.kind === "card_credit") && matchesPeriod(item.competenceDate)).reduce((sum, item) => sum + (item.kind === "card_credit" ? -item.amount : item.amount), 0);
   const monthItems = useMemo(() => monthTransactions(data.transactions, month, range), [data.transactions, month, range?.start, range?.end]);
   const totalIncome = summary.realizedIncome + summary.pendingIncome;
   const totalExpense = summary.realizedExpense + summary.pendingExpense;

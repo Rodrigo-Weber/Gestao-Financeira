@@ -32,7 +32,7 @@ export function TransactionsPage({ data, month, range, onAdd, onMarkPaid, onEdit
 
 function TransactionRow({ item, data, onMarkPaid, onEdit, onDelete }: { item: Transaction; data: FinanceData; onMarkPaid: (id: string) => void; onEdit: (item: Transaction) => void; onDelete: (item: Transaction) => void }) {
   const category = data.categories.find((value) => value.id === item.categoryId);
-  const income = item.kind === "income";
+  const income = item.kind === "income" || item.kind === "card_credit";
   return <div className="table-row">
     <div className="transaction-name"><span className={`round-icon ${income ? "green" : "soft"}`}><CircleDollarSign size={18} /></span><div><strong>{item.description}</strong><small>{data.accounts.find((value) => value.id === item.accountId)?.name ?? data.cards.find((value) => value.id === item.cardId)?.name ?? "Sem conta"}{item.paymentMethod ? ` • ${paymentMethod[item.paymentMethod]}` : ""}</small></div></div>
     <span>{category ? <span className="category-chip"><i style={{ background: category.color }} />{category.name}</span> : "—"}</span>
