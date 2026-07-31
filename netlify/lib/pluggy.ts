@@ -1,5 +1,7 @@
 const DEFAULT_BASE_URL = "https://api.pluggy.ai";
 const API_KEY_TTL_MS = 100 * 60 * 1000;
+const MAX_TRANSIENT_RETRIES = 3;
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
 
 let cachedApiKey: { value: string; expiresAt: number } | null = null;
 
@@ -25,6 +27,21 @@ async function responseJson(response: Response) {
   return response.json().catch(() => ({})) as Promise<Record<string, unknown>>;
 }
 
+function retryDelay(response: Response, attempt: number) {
+  const retryAfter = response.headers.get("retry-after");
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds)) return Math.min(Math.max(seconds * 1000, 0), 10_000);
+    const date = Date.parse(retryAfter);
+    if (Number.isFinite(date)) return Math.min(Math.max(date - Date.now(), 0), 10_000);
+  }
+  return 500 * (2 ** attempt) + Math.floor(Math.random() * 250);
+}
+
+function wait(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 export async function getPluggyApiKey(forceRefresh = false) {
   if (!pluggyConfigured()) throw new PluggyApiError("Credenciais Pluggy não configuradas.", 503);
   if (!forceRefresh && cachedApiKey && cachedApiKey.expiresAt > Date.now()) return cachedApiKey.value;
@@ -47,7 +64,7 @@ export async function getPluggyApiKey(forceRefresh = false) {
   return apiKey;
 }
 
-export async function pluggyFetch<T>(path: string, init: RequestInit = {}, retry = true): Promise<T> {
+export async function pluggyFetch<T>(path: string, init: RequestInit = {}, retryAuth = true, transientAttempt = 0): Promise<T> {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
   const apiKey = await getPluggyApiKey();
   const headers = new Headers(init.headers);
@@ -59,10 +76,14 @@ export async function pluggyFetch<T>(path: string, init: RequestInit = {}, retry
     headers,
     signal: init.signal ?? AbortSignal.timeout(20_000),
   });
-  if (response.status === 401 && retry) {
+  if (response.status === 401 && retryAuth) {
     cachedApiKey = null;
     await getPluggyApiKey(true);
-    return pluggyFetch<T>(path, init, false);
+    return pluggyFetch<T>(path, init, false, transientAttempt);
+  }
+  if (TRANSIENT_STATUSES.has(response.status) && transientAttempt < MAX_TRANSIENT_RETRIES) {
+    await wait(retryDelay(response, transientAttempt));
+    return pluggyFetch<T>(path, init, retryAuth, transientAttempt + 1);
   }
   if (!response.ok) {
     const body = await responseJson(response);

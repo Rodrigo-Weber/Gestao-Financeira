@@ -19,6 +19,7 @@ import {
 const SyncRequest = z.object({ connectionId: z.string().uuid(), userId: z.string().uuid().optional() });
 const BATCH_SIZE = 250;
 const MAX_TRANSACTION_PAGES = 40;
+const ACCOUNT_FETCH_CONCURRENCY = 3;
 
 type AccountList = { results?: PluggyAccount[] };
 type LoanList = { results?: PluggyLoan[] };
@@ -29,6 +30,20 @@ type ExistingExternal = { id: string; external_id: string | null; external_accou
 
 function chunks<T>(values: T[], size = BATCH_SIZE) {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
+}
+
+async function mapWithConcurrency<T, R>(values: T[], limit: number, mapper: (value: T, index: number) => Promise<R>) {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function nextTransactionPath(next: string) {
@@ -173,10 +188,10 @@ export default async (req: Request) => {
       const { error } = await auth.admin.from("credit_cards").upsert(cardRows, { onConflict: "id" });
       if (error) throw new Error(`Falha ao salvar cartões: ${error.message}`);
     }
-    const invoiceGroups = await Promise.all(pluggyAccounts.filter((account) => account.type === "CREDIT").map(async (account) => ({
+    const invoiceGroups = await mapWithConcurrency(pluggyAccounts.filter((account) => account.type === "CREDIT"), ACCOUNT_FETCH_CONCURRENCY, async (account) => ({
       account,
       bills: await fetchBills(account.id),
-    })));
+    }));
     const invoiceRows = invoiceGroups.flatMap(({ account, bills }) => bills.map((bill) => {
       const cardId = cardIds.get(account.id);
       if (!cardId) return null;
@@ -210,10 +225,10 @@ export default async (req: Request) => {
     const staleInvestmentIds = (existingInvestments.data ?? []).filter((row) => row.external_id && !currentInvestmentIds.has(row.external_id)).map((row) => row.id);
     if (staleInvestmentIds.length) await auth.admin.from("investments").delete().in("id", staleInvestmentIds).eq("connection_id", connection.id);
 
-    const transactionGroups = await Promise.all(pluggyAccounts.map(async (account) => ({
+    const transactionGroups = await mapWithConcurrency(pluggyAccounts, ACCOUNT_FETCH_CONCURRENCY, async (account) => ({
       account,
       transactions: await fetchTransactions(account.id),
-    })));
+    }));
     const existingTransactions = await listAllRows((from, to) => auth.admin!
       .from("transactions")
       .select("*")
