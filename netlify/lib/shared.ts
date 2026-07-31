@@ -6,6 +6,13 @@ export interface AuthContext {
   admin: SupabaseClient;
 }
 
+export function createAdminClient() {
+  const url = process.env.SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return null;
+  return createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
 export function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -19,7 +26,7 @@ export async function authenticate(req: Request): Promise<AuthContext | Response
   if (!url || !serviceKey) return json({ error: "Supabase não configurado no servidor." }, 503);
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return json({ error: "Faça login para usar a IA." }, 401);
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const admin = createAdminClient()!;
   const { data, error } = await admin.auth.getUser(token);
   if (error || !data.user) return json({ error: "Sessão inválida ou expirada." }, 401);
   return { user: data.user, admin };

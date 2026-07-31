@@ -22,3 +22,9 @@
 
 [functions]
   node_bundler = "esbuild"
+
+[functions."pluggy-webhook-worker"]
+  background = true
+
+[functions."pluggy-webhook-retry"]
+  schedule = "*/15 * * * *"

@@ -42,9 +42,14 @@ describe("Pluggy sync mapping", () => {
     expect(result).toMatchObject({ kind: "invoice_payment", category_id: null });
   });
 
-  it("maps negative sandbox credit transactions as positive card purchases", () => {
+  it("maps negative credit-card amounts as credits or refunds", () => {
     const result = map({ amount: -55.9, type: "CREDIT", description: "NETFLIX", category: "Video streaming" }, card);
-    expect(result).toMatchObject({ kind: "card_purchase", amount: 55.9, payment_method: "credit", card_id: "local-card", category_id: "leisure" });
+    expect(result).toMatchObject({ kind: "card_credit", amount: 55.9, provider_amount: -55.9, payment_method: "credit", card_id: "local-card", category_id: "leisure" });
+  });
+
+  it("maps positive credit-card amounts as purchases", () => {
+    const result = map({ amount: 55.9, type: "DEBIT", description: "NETFLIX", category: "Video streaming" }, card);
+    expect(result).toMatchObject({ kind: "card_purchase", amount: 55.9, provider_amount: 55.9 });
   });
 
   it("ignores the card-side copy of an invoice payment", () => {

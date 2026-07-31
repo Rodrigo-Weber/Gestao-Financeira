@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { authenticate, json } from "../lib/shared";
+import { authenticate, createAdminClient, json } from "../lib/shared";
 import { PluggyApiError, pluggyConfigured, pluggyFetch } from "../lib/pluggy";
 import {
   initialBalanceFromSnapshot,
@@ -16,7 +16,7 @@ import {
   type PluggyBill,
 } from "../lib/pluggy-sync";
 
-const SyncRequest = z.object({ connectionId: z.string().uuid() });
+const SyncRequest = z.object({ connectionId: z.string().uuid(), userId: z.string().uuid().optional() });
 const BATCH_SIZE = 250;
 const MAX_TRANSACTION_PAGES = 40;
 
@@ -25,7 +25,7 @@ type LoanList = { results?: PluggyLoan[] };
 type InvestmentList = { results?: PluggyInvestment[] };
 type TransactionList = { results?: PluggyTransaction[]; next?: string | null };
 type BillList = { results?: PluggyBill[] };
-type ExistingExternal = { id: string; external_id: string | null; external_account_id?: string | null };
+type ExistingExternal = { id: string; external_id: string | null; external_account_id?: string | null; [key: string]: unknown };
 
 function chunks<T>(values: T[], size = BATCH_SIZE) {
   return Array.from({ length: Math.ceil(values.length / size) }, (_, index) => values.slice(index * size, (index + 1) * size));
@@ -79,16 +79,22 @@ function publicError(error: unknown) {
 
 export default async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Método não permitido." }, 405);
-  const auth = await authenticate(req);
-  if (auth instanceof Response) return auth;
   if (!pluggyConfigured()) return json({ error: "Credenciais Pluggy não configuradas no servidor." }, 503);
 
   const parsed = SyncRequest.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return json({ error: "Conexão inválida." }, 400);
+  const internal = Boolean(process.env.PLUGGY_WEBHOOK_SECRET)
+    && req.headers.get("x-pluggy-webhook-secret") === process.env.PLUGGY_WEBHOOK_SECRET
+    && parsed.data.userId;
+  const auth = internal
+    ? { user: { id: parsed.data.userId! }, admin: createAdminClient() }
+    : await authenticate(req);
+  if (auth instanceof Response) return auth;
+  if (!auth.admin) return json({ error: "Supabase não configurado no servidor." }, 503);
 
   const { data: connection, error: connectionError } = await auth.admin
     .from("financial_connections")
-    .select("id,external_item_id,display_name,status")
+    .select("id,external_item_id,display_name,status,sync_lock_until")
     .eq("id", parsed.data.connectionId)
     .eq("user_id", auth.user.id)
     .eq("provider", "pluggy")
@@ -96,14 +102,19 @@ export default async (req: Request) => {
   if (connectionError) return json({ error: "Não foi possível carregar a conexão." }, 502);
   if (!connection) return json({ error: "Conexão Pluggy não encontrada." }, 404);
   if (connection.status === "disconnected") return json({ error: "Conexão desconectada. Substitua ou vincule novamente o Item ID." }, 409);
+  if (connection.sync_lock_until && new Date(connection.sync_lock_until).getTime() > Date.now()) return json({ error: "Sincronização já está em andamento." }, 409);
 
   const now = new Date().toISOString();
+  await auth.admin.from("financial_connections").update({ sync_lock_until: new Date(Date.now() + 15 * 60_000).toISOString() }).eq("id", connection.id).eq("user_id", auth.user.id);
   const { data: run, error: runError } = await auth.admin
     .from("financial_sync_runs")
     .insert({ user_id: auth.user.id, connection_id: connection.id, status: "running" })
     .select("id")
     .single();
-  if (runError || !run) return json({ error: "Não foi possível iniciar o histórico de sincronização." }, 502);
+  if (runError || !run) {
+    await auth.admin.from("financial_connections").update({ sync_lock_until: null }).eq("id", connection.id).eq("user_id", auth.user.id);
+    return json({ error: "Não foi possível iniciar o histórico de sincronização." }, 502);
+  }
 
   await auth.admin.from("financial_connections").update({ status: "syncing", last_error: null }).eq("id", connection.id);
 
@@ -119,10 +130,10 @@ export default async (req: Request) => {
     if (!pluggyAccounts.length) throw new Error("A Pluggy não retornou contas para este Item ID.");
 
     const [existingAccounts, existingCards, existingDebts, existingInvestments, existingInvoices, categoryResult] = await Promise.all([
-      auth.admin.from("accounts").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
-      auth.admin.from("credit_cards").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
-      auth.admin.from("debts").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
-      auth.admin.from("investments").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
+      auth.admin.from("accounts").select("*").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
+      auth.admin.from("credit_cards").select("*").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
+      auth.admin.from("debts").select("*").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
+      auth.admin.from("investments").select("*").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("card_invoices").select("id,external_id,card_id,reference_month").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("categories").select("id,name,kind").eq("user_id", auth.user.id),
     ]);
@@ -203,9 +214,9 @@ export default async (req: Request) => {
       account,
       transactions: await fetchTransactions(account.id),
     })));
-    const existingTransactions = await listAllRows((from, to) => auth.admin
+    const existingTransactions = await listAllRows((from, to) => auth.admin!
       .from("transactions")
-      .select("id,external_id,external_account_id")
+      .select("*")
       .eq("user_id", auth.user.id)
       .eq("connection_id", connection.id)
       .eq("external_provider", "pluggy")
@@ -214,7 +225,7 @@ export default async (req: Request) => {
     const transactionRows = transactionGroups.flatMap(({ account, transactions }) => transactions.map((transaction) => {
       const id = transactionIds.get(transaction.id) || crypto.randomUUID();
       transactionIds.set(transaction.id, id);
-      return mapPluggyTransaction(transaction, {
+      const mapped = mapPluggyTransaction(transaction, {
         userId: auth.user.id,
         connectionId: connection.id,
         account,
@@ -223,6 +234,12 @@ export default async (req: Request) => {
         categories: categoryResult.data ?? [],
         now,
       }, id);
+      if (!mapped || account.type !== "CREDIT") return mapped;
+      const transactionDate = mapped.competence_date;
+      const invoice = invoiceRows
+        .filter((row) => row.card_id === mapped.card_id && row.closing_date && row.closing_date >= transactionDate)
+        .sort((a, b) => String(a.closing_date).localeCompare(String(b.closing_date)))[0];
+      return invoice ? { ...mapped, invoice_id: invoice.id, due_date: invoice.due_date } : mapped;
     }).filter((row) => row !== null));
 
     for (const batch of chunks(transactionRows)) {
@@ -277,6 +294,36 @@ export default async (req: Request) => {
       removed: staleIds.length + staleAccountIds.length + staleCardIds.length + staleDebtIds.length + staleInvestmentIds.length + staleInvoiceIds.length,
     };
 
+    const changeRows: Array<Record<string, unknown>> = [];
+    const collectChanges = (entityType: string, rows: Array<Record<string, any>>, existing: ExistingExternal[], keys: string[]) => {
+      const byExternal = new Map(existing.map((row) => [row.external_id, row]));
+      for (const row of rows) {
+        const previous = byExternal.get(row.external_id);
+        const changed = previous && keys.some((key) => String(previous[key] ?? "") !== String(row[key] ?? ""));
+        if (!previous || changed) changeRows.push({
+          user_id: auth.user.id,
+          connection_id: connection.id,
+          entity_type: entityType,
+          entity_id: row.id,
+          external_id: row.external_id,
+          operation: previous ? "updated" : "created",
+          old_data: previous ?? null,
+          new_data: row,
+          sync_run_id: run.id,
+        });
+      }
+    };
+    collectChanges("account", bankRows, existingAccounts.data ?? [], ["reported_balance", "name", "active"]);
+    collectChanges("card", cardRows, existingCards.data ?? [], ["credit_limit", "available_limit", "used_limit", "reported_balance", "active"]);
+    collectChanges("debt", debtRows, existingDebts.data ?? [], ["outstanding_balance", "paid_installments", "remaining_installments", "active"]);
+    collectChanges("investment", investmentRows, existingInvestments.data ?? [], ["balance", "quantity", "unit_value"]);
+    collectChanges("transaction", transactionRows as Array<Record<string, any>>, existingTransactions, ["provider_updated_at", "amount", "status", "description", "kind"]);
+    for (const stale of existingTransactions.filter((row) => staleIds.includes(row.id))) changeRows.push({ user_id: auth.user.id, connection_id: connection.id, entity_type: "transaction", entity_id: stale.id, external_id: stale.external_id, operation: "deleted", old_data: stale, new_data: null, sync_run_id: run.id });
+    for (const batch of chunks(changeRows)) {
+      const { error } = await auth.admin.from("external_change_log").insert(batch);
+      if (error) throw new Error(`Falha ao registrar histórico externo: ${error.message}`);
+    }
+
     const snapshotMonth = `${now.slice(0, 7)}-01`;
     const [snapshotAccounts, snapshotInvestments, snapshotDebts, snapshotAssets] = await Promise.all([
       auth.admin.from("accounts").select("reported_balance,initial_balance").eq("user_id", auth.user.id).eq("active", true),
@@ -323,6 +370,8 @@ export default async (req: Request) => {
         ],
         last_synced_at: new Date().toISOString(),
         last_error: null,
+        sync_lock_until: null,
+        webhook_last_event_at: internal ? new Date().toISOString() : undefined,
       }).eq("id", connection.id),
     ]);
 
@@ -339,6 +388,7 @@ export default async (req: Request) => {
       auth.admin.from("financial_connections").update({
         status: "error",
         last_error: failure.message,
+        sync_lock_until: null,
       }).eq("id", connection.id),
     ]);
     return json({ error: failure.message }, failure.status);

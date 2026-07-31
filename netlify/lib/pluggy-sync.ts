@@ -61,6 +61,8 @@ export type PluggyTransaction = {
   status?: string;
   category?: string;
   categoryId?: string;
+  operationType?: string | null;
+  merchant?: Record<string, unknown> | null;
   createdAt?: string;
   updatedAt?: string;
   paymentData?: {
@@ -383,7 +385,10 @@ export function mapPluggyTransaction(transaction: PluggyTransaction, context: Tr
   const cardTransaction = context.account.type === "CREDIT";
   if (cardTransaction && isCreditCardPayment(transaction)) return null;
   const invoicePayment = !cardTransaction && isCreditCardPayment(transaction);
-  const kind = cardTransaction ? "card_purchase" : invoicePayment ? "invoice_payment" : transaction.type === "CREDIT" || transaction.amount > 0 ? "income" : "expense";
+  const kind = cardTransaction
+    ? transaction.amount < 0 ? "card_credit" : "card_purchase"
+    : invoicePayment ? "invoice_payment"
+      : transaction.type === "CREDIT" || transaction.amount > 0 ? "income" : "expense";
   const categoryKind = kind === "income" ? "income" : "expense";
   const date = dateOnly(transaction.date);
   const status = transaction.status === "CANCELLED" ? "cancelled" : transaction.status === "POSTED" ? "paid" : "pending";
@@ -421,6 +426,10 @@ export function mapPluggyTransaction(transaction: PluggyTransaction, context: Tr
     source: "pluggy",
     provider_status: transaction.status || null,
     provider_category: transaction.category || null,
+    provider_amount: Number(transaction.amount || 0),
+    provider_type: transaction.type || null,
+    operation_type: transaction.operationType || null,
+    merchant: transaction.merchant || null,
     provider_created_at: transaction.createdAt || null,
     provider_updated_at: transaction.updatedAt || null,
     imported_at: context.now,
