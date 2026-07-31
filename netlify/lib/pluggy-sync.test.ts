@@ -78,6 +78,19 @@ describe("Pluggy sync mapping", () => {
     expect(result).toMatchObject({ name: "CDB", balance: 2100, annual_rate: 12, type: "FIXED_INCOME" });
   });
 
+  it("accepts the canonical Open Finance spelling for loan installment fields", () => {
+    const result = mapPluggyLoan({
+      id: "loan-canonical",
+      productName: "Consignado",
+      contractAmount: 12000,
+      firstInstalmentDueDate: "2026-09-07T00:00:00.000Z",
+      instalmentPeriodicity: "MONTHLY",
+      installments: { totalNumberOfInstallments: 12, paidInstallments: 3, dueInstallments: 9, pastDueInstalments: 1 },
+      payments: { contractOutstandingBalance: 9000 },
+    }, "user", "connection", "Banco", "local-loan-canonical", "2026-07-30T12:00:00.000Z");
+    expect(result).toMatchObject({ due_day: 7, remaining_installments: 9, metadata: { periodicity: "MONTHLY", pastDueInstallments: 1 } });
+  });
+
   it("prefers official disaggregated credit limits", () => {
     const result = mapPluggyCreditCard({ id: "card", type: "CREDIT", number: "4821", creditData: { creditLimit: 8000, availableCreditLimit: 7000, disaggregatedCreditLimits: [{ creditLineLimitType: "LIMITE_CREDITO_TOTAL", consolidationType: "CONSOLIDATED", limitAmount: 10000, availableAmount: 8400, usedAmount: 1600 }] } }, "user", "connection", "local-card", "2026-07-30T12:00:00.000Z");
     expect(result).toMatchObject({ credit_limit: 10000, available_limit: 8400, used_limit: 1600 });

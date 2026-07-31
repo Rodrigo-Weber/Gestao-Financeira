@@ -81,9 +81,12 @@ export type PluggyLoan = {
   contractAmount?: number;
   contractDate?: string;
   dueDate?: string;
+  firstInstalmentDueDate?: string;
+  /** Compatibilidade com payloads legados de alguns conectores. */
   firstInstallmentDueDate?: string;
   CET?: number;
   amortizationScheduled?: string;
+  instalmentPeriodicity?: string;
   installmentPeriodicity?: string;
   interestRates?: Array<{
     taxPeriodicity?: string;
@@ -95,6 +98,7 @@ export type PluggyLoan = {
     totalNumberOfInstallments?: number;
     paidInstallments?: number;
     dueInstallments?: number;
+    pastDueInstalments?: number;
     pastDueInstallments?: number;
   };
   payments?: {
@@ -283,9 +287,10 @@ function monthlyRate(loan: PluggyLoan) {
 
 export function mapPluggyLoan(loan: PluggyLoan, userId: string, connectionId: string, creditor: string, id: string, now: string) {
   const outstanding = Math.max(0, Number(loan.payments?.contractOutstandingBalance ?? loan.contractAmount ?? 0));
-  const remaining = Math.max(0, Number(loan.installments?.dueInstallments ?? 0));
   const total = Math.max(0, Number(loan.installments?.totalNumberOfInstallments ?? 0));
-  const paid = Math.max(0, Number(loan.installments?.paidInstallments ?? Math.max(0, total - remaining)));
+  const paid = Math.max(0, Number(loan.installments?.paidInstallments ?? 0));
+  const providerRemaining = Math.max(0, Number(loan.installments?.dueInstallments ?? 0));
+  const remaining = total > 0 && paid > 0 ? Math.max(0, total - paid) : providerRemaining;
   return {
     id,
     user_id: userId,
@@ -299,7 +304,7 @@ export function mapPluggyLoan(loan: PluggyLoan, userId: string, connectionId: st
     outstanding_balance: outstanding,
     monthly_interest: monthlyRate(loan),
     minimum_payment: remaining > 0 ? Math.round(outstanding / remaining * 100) / 100 : 0,
-    due_day: validDay(loan.firstInstallmentDueDate || loan.dueDate, 10),
+    due_day: validDay(loan.firstInstalmentDueDate || loan.firstInstallmentDueDate || loan.dueDate, 10),
     annual_cet: Number.isFinite(loan.CET) ? Math.round(Number(loan.CET) * 10000) / 100 : null,
     total_installments: total || null,
     paid_installments: paid || null,
@@ -311,8 +316,8 @@ export function mapPluggyLoan(loan: PluggyLoan, userId: string, connectionId: st
       contractDate: loan.contractDate || null,
       loanType: loan.type || null,
       amortization: loan.amortizationScheduled || null,
-      periodicity: loan.installmentPeriodicity || null,
-      pastDueInstallments: loan.installments?.pastDueInstallments ?? null,
+      periodicity: loan.instalmentPeriodicity || loan.installmentPeriodicity || null,
+      pastDueInstallments: loan.installments?.pastDueInstalments ?? loan.installments?.pastDueInstallments ?? null,
       interestRates: loan.interestRates ?? [],
     },
     imported_at: now,

@@ -95,6 +95,7 @@ export interface Debt {
   totalInstallments?: number;
   paidInstallments?: number;
   remainingInstallments?: number;
+  pastDueInstallments?: number;
   contractEndDate?: string;
   source?: "manual" | "pluggy";
 }
