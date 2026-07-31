@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialBalanceFromSnapshot, mapPluggyInvestment, mapPluggyLoan, mapPluggyTransaction, type PluggyAccount, type PluggyTransaction } from "./pluggy-sync";
+import { initialBalanceFromSnapshot, mapPluggyBill, mapPluggyCreditCard, mapPluggyInvestment, mapPluggyLoan, mapPluggyTransaction, type PluggyAccount, type PluggyTransaction } from "./pluggy-sync";
 
 const categories = [
   { id: "salary", name: "Salário", kind: "income" as const },
@@ -76,5 +76,15 @@ describe("Pluggy sync mapping", () => {
   it("maps investments using net balance", () => {
     const result = mapPluggyInvestment({ id: "investment", name: "CDB", type: "FIXED_INCOME", subtype: "CDB", balance: 2100, amount: 2200, fixedAnnualRate: 12, status: "ACTIVE" }, "user", "connection", "Banco", "local-investment", "2026-07-30T12:00:00.000Z");
     expect(result).toMatchObject({ name: "CDB", balance: 2100, annual_rate: 12, type: "FIXED_INCOME" });
+  });
+
+  it("prefers official disaggregated credit limits", () => {
+    const result = mapPluggyCreditCard({ id: "card", type: "CREDIT", number: "4821", creditData: { creditLimit: 8000, availableCreditLimit: 7000, disaggregatedCreditLimits: [{ creditLineLimitType: "LIMITE_CREDITO_TOTAL", consolidationType: "CONSOLIDATED", limitAmount: 10000, availableAmount: 8400, usedAmount: 1600 }] } }, "user", "connection", "local-card", "2026-07-30T12:00:00.000Z");
+    expect(result).toMatchObject({ credit_limit: 10000, available_limit: 8400, used_limit: 1600 });
+  });
+
+  it("maps a Pluggy bill without requiring a closing date", () => {
+    const result = mapPluggyBill({ id: "bill", dueDate: "2026-08-15T00:00:00.000Z", totalAmount: 500, minimumPaymentAmount: 50 }, "user", "connection", "local-card", "local-bill", "2026-07-30T12:00:00.000Z");
+    expect(result).toMatchObject({ card_id: "local-card", reference_month: "2026-08-01", closing_date: null, total: 500, status: "open" });
   });
 });

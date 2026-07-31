@@ -52,9 +52,33 @@ export interface CreditCard {
   brand: string;
   lastDigits: string;
   limit: number;
+  availableLimit?: number;
+  usedLimit?: number;
+  reportedBalance?: number;
+  minimumPayment?: number;
+  isLimitFlexible?: boolean;
+  status?: "ACTIVE" | "BLOCKED" | "CANCELLED";
+  level?: string;
+  holderType?: "MAIN" | "ADDITIONAL";
+  lastSyncedAt?: string;
   closingDay: number;
   dueDay: number;
   color: string;
+}
+
+export interface CardInvoice {
+  id: string;
+  cardId: string;
+  referenceMonth: string;
+  closingDate?: string;
+  dueDate: string;
+  status: "open" | "closed" | "paid" | "overdue";
+  total: number;
+  minimumPayment?: number;
+  paidAmount?: number;
+  allowsInstallments?: boolean;
+  currencyCode?: string;
+  source?: "manual" | "pluggy";
 }
 
 export interface Debt {
@@ -150,6 +174,7 @@ export interface FinanceData {
   categories: Category[];
   transactions: Transaction[];
   cards: CreditCard[];
+  cardInvoices?: CardInvoice[];
   debts: Debt[];
   budgets: Budget[];
   investments?: Investment[];

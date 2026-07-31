@@ -6,12 +6,14 @@ import {
   mapPluggyBankAccount,
   mapPluggyCreditCard,
   mapPluggyInvestment,
+  mapPluggyBill,
   mapPluggyLoan,
   mapPluggyTransaction,
   type PluggyAccount,
   type PluggyInvestment,
   type PluggyLoan,
   type PluggyTransaction,
+  type PluggyBill,
 } from "../lib/pluggy-sync";
 
 const SyncRequest = z.object({ connectionId: z.string().uuid() });
@@ -22,6 +24,7 @@ type AccountList = { results?: PluggyAccount[] };
 type LoanList = { results?: PluggyLoan[] };
 type InvestmentList = { results?: PluggyInvestment[] };
 type TransactionList = { results?: PluggyTransaction[]; next?: string | null };
+type BillList = { results?: PluggyBill[] };
 type ExistingExternal = { id: string; external_id: string | null; external_account_id?: string | null };
 
 function chunks<T>(values: T[], size = BATCH_SIZE) {
@@ -55,6 +58,18 @@ async function fetchTransactions(accountId: string) {
   }
   if (path) throw new Error(`A conta ${accountId} excedeu o limite seguro de paginação.`);
   return transactions;
+}
+
+async function fetchBills(accountId: string) {
+  try {
+    const response = await pluggyFetch<BillList | PluggyBill[]>(`/bills?accountId=${encodeURIComponent(accountId)}`);
+    return Array.isArray(response) ? response : response.results ?? [];
+  } catch (error) {
+    // Bills are optional across connectors. Unsupported products should not
+    // make accounts and transactions fail to synchronize.
+    if (error instanceof PluggyApiError && [400, 404, 405].includes(error.status)) return [];
+    throw error;
+  }
 }
 
 function publicError(error: unknown) {
@@ -103,19 +118,21 @@ export default async (req: Request) => {
     const pluggyInvestments = investmentResponse.results ?? [];
     if (!pluggyAccounts.length) throw new Error("A Pluggy não retornou contas para este Item ID.");
 
-    const [existingAccounts, existingCards, existingDebts, existingInvestments, categoryResult] = await Promise.all([
+    const [existingAccounts, existingCards, existingDebts, existingInvestments, existingInvoices, categoryResult] = await Promise.all([
       auth.admin.from("accounts").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("credit_cards").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("debts").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("investments").select("id,external_id").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
+      auth.admin.from("card_invoices").select("id,external_id,card_id,reference_month").eq("user_id", auth.user.id).eq("connection_id", connection.id).eq("external_provider", "pluggy"),
       auth.admin.from("categories").select("id,name,kind").eq("user_id", auth.user.id),
     ]);
-    if (existingAccounts.error || existingCards.error || existingDebts.error || existingInvestments.error || categoryResult.error) throw new Error("Não foi possível preparar os dados locais.");
+    if (existingAccounts.error || existingCards.error || existingDebts.error || existingInvestments.error || existingInvoices.error || categoryResult.error) throw new Error("Não foi possível preparar os dados locais.");
 
     const accountIds = new Map((existingAccounts.data ?? []).map((row) => [row.external_id, row.id]));
     const cardIds = new Map((existingCards.data ?? []).map((row) => [row.external_id, row.id]));
     const debtIds = new Map((existingDebts.data ?? []).map((row) => [row.external_id, row.id]));
     const investmentIds = new Map((existingInvestments.data ?? []).map((row) => [row.external_id, row.id]));
+    const invoiceIds = new Map((existingInvoices.data ?? []).map((row) => [row.external_id, row.id]));
     const bankRows = pluggyAccounts.filter((account) => account.type === "BANK").map((account) => {
       const id = accountIds.get(account.id) || crypto.randomUUID();
       accountIds.set(account.id, id);
@@ -144,6 +161,27 @@ export default async (req: Request) => {
     if (cardRows.length) {
       const { error } = await auth.admin.from("credit_cards").upsert(cardRows, { onConflict: "id" });
       if (error) throw new Error(`Falha ao salvar cartões: ${error.message}`);
+    }
+    const invoiceGroups = await Promise.all(pluggyAccounts.filter((account) => account.type === "CREDIT").map(async (account) => ({
+      account,
+      bills: await fetchBills(account.id),
+    })));
+    const invoiceRows = invoiceGroups.flatMap(({ account, bills }) => bills.map((bill) => {
+      const cardId = cardIds.get(account.id);
+      if (!cardId) return null;
+      const id = invoiceIds.get(bill.id) || crypto.randomUUID();
+      invoiceIds.set(bill.id, id);
+      return mapPluggyBill(bill, auth.user.id, connection.id, cardId, id, now);
+    }).filter((row) => row !== null));
+    if (invoiceRows.length) {
+      const { error } = await auth.admin.from("card_invoices").upsert(invoiceRows, { onConflict: "id" });
+      if (error) throw new Error(`Falha ao salvar faturas: ${error.message}`);
+    }
+    const currentInvoiceIds = new Set(invoiceGroups.flatMap((group) => group.bills.map((bill) => bill.id)));
+    const staleInvoiceIds = (existingInvoices.data ?? []).filter((row) => row.external_id && !currentInvoiceIds.has(row.external_id)).map((row) => row.id);
+    for (const batch of chunks(staleInvoiceIds)) {
+      const { error } = await auth.admin.from("card_invoices").delete().in("id", batch).eq("connection_id", connection.id).eq("user_id", auth.user.id);
+      if (error) throw new Error("Falha ao remover faturas antigas.");
     }
     if (debtRows.length) {
       const { error } = await auth.admin.from("debts").upsert(debtRows, { onConflict: "id" });
@@ -234,8 +272,9 @@ export default async (req: Request) => {
       cards: cardRows.length,
       loans: debtRows.length,
       investments: investmentRows.length,
+      invoices: invoiceRows.length,
       transactions: transactionRows.length,
-      removed: staleIds.length + staleAccountIds.length + staleCardIds.length + staleDebtIds.length + staleInvestmentIds.length,
+      removed: staleIds.length + staleAccountIds.length + staleCardIds.length + staleDebtIds.length + staleInvestmentIds.length + staleInvoiceIds.length,
     };
 
     const snapshotMonth = `${now.slice(0, 7)}-01`;
@@ -277,6 +316,7 @@ export default async (req: Request) => {
         products: [
           ...(bankRows.length ? ["ACCOUNTS"] : []),
           ...(cardRows.length ? ["CREDIT_CARDS"] : []),
+          ...(invoiceRows.length ? ["CREDIT_CARD_BILLS"] : []),
           ...(transactionRows.length ? ["TRANSACTIONS"] : []),
           ...(debtRows.length ? ["LOANS"] : []),
           ...(investmentRows.length ? ["INVESTMENTS"] : []),

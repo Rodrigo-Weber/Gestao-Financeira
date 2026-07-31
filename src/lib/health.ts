@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarMonths, differenceInMonths, endOfMonth, format, isAfter, isBefore, parseISO, startOfMonth, subMonths } from "date-fns";
+import { addDays, differenceInCalendarMonths, differenceInCalendarDays, differenceInMonths, endOfMonth, format, isAfter, isBefore, parseISO, startOfMonth, subMonths } from "date-fns";
 import type { FinanceData, FinancialGoal, Transaction } from "../types";
 import { accountBalance, monthTransactions } from "./finance";
 
@@ -108,6 +108,50 @@ export function subscriptionInsights(data: FinanceData, reference = new Date()) 
     if (!stable) return [];
     return [{ key, name: items[0].description, monthly: round(average), annual: round(average * 12), occurrences: items.length }];
   }).sort((a, b) => b.monthly - a.monthly);
+}
+
+export interface RecurringInsight {
+  key: string;
+  name: string;
+  kind: "income" | "expense";
+  average: number;
+  annual: number;
+  occurrences: number;
+  regularityScore: number;
+  intervalDays: number;
+  nextExpectedDate: string;
+  lastOccurrence: string;
+  categoryId?: string;
+  cardId?: string;
+  accountId?: string;
+}
+
+/** Detects recurring movements using Pluggy's documented quality gates:
+ * at least three occurrences, monthly intervals around 30 days and <=10%
+ * amount variance. Explicit recurring rules remain useful with sparse data.
+ */
+export function recurringInsights(data: FinanceData, reference = new Date()): RecurringInsight[] {
+  const start = subMonths(startOfMonth(reference), 12);
+  const movements = data.transactions.filter((item) => item.status !== "cancelled" && item.kind !== "transfer" && item.kind !== "invoice_payment" && !isBefore(parseISO(item.competenceDate), start));
+  const groups = new Map<string, Transaction[]>();
+  movements.forEach((item) => {
+    const key = normalize(item.description);
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  });
+  return Array.from(groups.entries()).flatMap(([key, items]) => {
+    const sorted = [...items].sort((a, b) => a.competenceDate.localeCompare(b.competenceDate));
+    if (sorted.length < 3) return [];
+    const intervals = sorted.slice(1).map((item, index) => differenceInCalendarDays(parseISO(item.competenceDate), parseISO(sorted[index].competenceDate)));
+    const averageInterval = intervals.reduce((sum, value) => sum + value, 0) / intervals.length;
+    if (averageInterval < 25 || averageInterval > 35) return [];
+    const amounts = sorted.map((item) => item.amount);
+    const average = amounts.reduce((sum, value) => sum + value, 0) / amounts.length;
+    if (!average || amounts.some((value) => Math.abs(value - average) / average > .1)) return [];
+    const timingScore = Math.max(0, 1 - intervals.reduce((sum, value) => sum + Math.abs(value - 30), 0) / intervals.length / 30);
+    const amountScore = Math.max(0, 1 - amounts.reduce((sum, value) => sum + Math.abs(value - average) / average, 0) / amounts.length);
+    const last = sorted[sorted.length - 1];
+    return [{ key, name: last.description, kind: (last.kind === "income" ? "income" : "expense") as "income" | "expense", average: round(average), annual: round(average * 12), occurrences: sorted.length, regularityScore: round((timingScore + amountScore) / 2), intervalDays: Math.round(averageInterval), nextExpectedDate: format(addDays(parseISO(last.competenceDate), Math.round(averageInterval)), "yyyy-MM-dd"), lastOccurrence: last.competenceDate, categoryId: last.categoryId, cardId: last.cardId, accountId: last.accountId }];
+  }).sort((a, b) => b.average - a.average);
 }
 
 export function unusualExpenses(data: FinanceData, month = new Date()) {

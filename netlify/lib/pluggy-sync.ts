@@ -18,8 +18,36 @@ export type PluggyAccount = {
     balanceDueDate?: string;
     availableCreditLimit?: number;
     creditLimit?: number;
+    minimumPayment?: number;
+    isLimitFlexible?: boolean;
+    level?: string;
+    holderType?: "MAIN" | "ADDITIONAL";
     status?: string;
+    disaggregatedCreditLimits?: Array<{
+      creditLineLimitType?: string;
+      consolidationType?: string;
+      identificationNumber?: string;
+      isLimitFlexible?: boolean;
+      usedAmount?: number;
+      lineName?: string;
+      limitAmount?: number;
+      customizedLimitAmount?: number;
+      availableAmount?: number;
+      currencyCode?: string;
+    }>;
   } | null;
+};
+
+export type PluggyBill = {
+  id: string;
+  dueDate: string;
+  billClosingDate?: string | null;
+  totalAmount: number;
+  totalAmountCurrencyCode?: string;
+  minimumPaymentAmount?: number;
+  allowsInstallments?: boolean;
+  payments?: Array<{ id?: string; valueType?: string; paymentDate?: string; paymentMode?: string; amount?: number; currencyCode?: string }>;
+  financeCharges?: Array<{ id?: string; type?: string; amount?: number; currencyCode?: string; additionalInfo?: string }>;
 };
 
 export type PluggyTransaction = {
@@ -165,6 +193,18 @@ export function mapPluggyBankAccount(account: PluggyAccount, userId: string, con
 
 export function mapPluggyCreditCard(account: PluggyAccount, userId: string, connectionId: string, id: string, now: string) {
   const digits = (account.number || "").replace(/\D/g, "").slice(-4);
+  const creditData = account.creditData;
+  const lines = creditData?.disaggregatedCreditLimits ?? [];
+  const totalLines = lines.filter((line) => line.creditLineLimitType === "LIMITE_CREDITO_TOTAL");
+  const preferredLines = totalLines.filter((line) => line.consolidationType === "CONSOLIDATED");
+  const selectedLines = preferredLines.length ? preferredLines : totalLines;
+  const lineValue = (field: "usedAmount" | "availableAmount" | "limitAmount" | "customizedLimitAmount") => {
+    const values = selectedLines.map((line) => Number(line[field])).filter(Number.isFinite);
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : undefined;
+  };
+  const creditLimit = lineValue("customizedLimitAmount") ?? lineValue("limitAmount") ?? (Number.isFinite(creditData?.creditLimit) ? Number(creditData?.creditLimit) : undefined);
+  const availableLimit = lineValue("availableAmount") ?? (Number.isFinite(creditData?.availableCreditLimit) ? Number(creditData?.availableCreditLimit) : undefined);
+  const usedLimit = lineValue("usedAmount") ?? (creditLimit != null && availableLimit != null ? Math.max(0, creditLimit - availableLimit) : undefined);
   return {
     id,
     user_id: userId,
@@ -174,15 +214,60 @@ export function mapPluggyCreditCard(account: PluggyAccount, userId: string, conn
     name: account.marketingName || account.name || "Cartão de crédito",
     brand: account.creditData?.brand || "",
     last_digits: /^\d{4}$/.test(digits) ? digits : null,
-    credit_limit: Math.max(0, Number(account.creditData?.creditLimit ?? 0)),
-    available_limit: Math.max(0, Number(account.creditData?.availableCreditLimit ?? 0)),
+    credit_limit: Math.max(0, creditLimit ?? 0),
+    available_limit: availableLimit == null ? null : Math.max(0, availableLimit),
+    used_limit: usedLimit == null ? null : Math.max(0, usedLimit),
     reported_balance: Number(account.balance ?? 0),
     reported_balance_at: account.updatedAt || now,
     imported_at: now,
     closing_day: validDay(account.creditData?.balanceCloseDate, 1),
     due_day: validDay(account.creditData?.balanceDueDate, 10),
+    metadata: {
+      minimumPayment: creditData?.minimumPayment ?? null,
+      isLimitFlexible: creditData?.isLimitFlexible ?? null,
+      level: creditData?.level ?? null,
+      holderType: creditData?.holderType ?? null,
+      status: creditData?.status ?? null,
+      disaggregatedCreditLimits: lines,
+      currencyCode: account.currencyCode ?? "BRL",
+    },
     color: colorForExternalId(account.id),
     active: account.creditData?.status !== "CANCELLED",
+  };
+}
+
+function billStatus(bill: PluggyBill, now = new Date()) {
+  const due = new Date(bill.dueDate);
+  const paid = (bill.payments ?? []).reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0);
+  const total = Number(bill.totalAmount ?? 0) + (bill.financeCharges ?? []).reduce((sum, charge) => sum + Number(charge.amount ?? 0), 0);
+  if (total > 0 && paid >= total - 0.01) return "paid" as const;
+  if (Number.isNaN(due.getTime())) return "open" as const;
+  if (due < now) return "overdue" as const;
+  return bill.billClosingDate ? "closed" as const : "open" as const;
+}
+
+export function mapPluggyBill(bill: PluggyBill, userId: string, connectionId: string, cardId: string, id: string, now: string) {
+  const dueDate = dateOnly(bill.dueDate);
+  const closingDate = bill.billClosingDate ? dateOnly(bill.billClosingDate) : null;
+  return {
+    id,
+    user_id: userId,
+    card_id: cardId,
+    connection_id: connectionId,
+    external_provider: "pluggy",
+    external_id: bill.id,
+    reference_month: `${dueDate.slice(0, 7)}-01`,
+    closing_date: closingDate,
+    due_date: dueDate,
+    status: billStatus(bill, new Date(now)),
+    total: Math.max(0, Number(bill.totalAmount ?? 0)),
+    minimum_payment: bill.minimumPaymentAmount == null ? null : Math.max(0, Number(bill.minimumPaymentAmount)),
+    paid_amount: (bill.payments ?? []).reduce((sum, payment) => sum + Number(payment.amount ?? 0), 0),
+    allows_installments: bill.allowsInstallments ?? null,
+    currency_code: bill.totalAmountCurrencyCode ?? "BRL",
+    payments: bill.payments ?? [],
+    finance_charges: bill.financeCharges ?? [],
+    imported_at: now,
   };
 }
 

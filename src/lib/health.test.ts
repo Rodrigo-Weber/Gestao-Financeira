@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FinanceData } from "../types";
-import { budgetPace, cashForecast, emergencyPlan, goalPlan, netWorth, subscriptionInsights } from "./health";
+import { budgetPace, cashForecast, emergencyPlan, goalPlan, netWorth, recurringInsights, subscriptionInsights } from "./health";
 
 const data: FinanceData = {
   accounts: [{ id: "a", name: "Conta", institution: "", type: "checking", initialBalance: 1000, color: "#000", active: true }],
@@ -36,6 +36,11 @@ describe("financial health", () => {
 
   it("detects stable subscriptions", () => {
     expect(subscriptionInsights(data, new Date("2026-07-30T12:00:00"))[0]).toMatchObject({ name: "Netflix", monthly: 50, annual: 600 });
+  });
+
+  it("requires three monthly occurrences for a recurring insight", () => {
+    const recurringData = { ...data, transactions: [...data.transactions, { id: "netflix3", description: "Netflix", amount: 50, kind: "expense" as const, status: "paid" as const, dueDate: "2026-08-01", paidDate: "2026-08-01", competenceDate: "2026-08-01", categoryId: "fun", accountId: "a", source: "manual" as const }] };
+    expect(recurringInsights(recurringData, new Date("2026-08-15T12:00:00"))[0]).toMatchObject({ name: "Netflix", occurrences: 3, average: 50, intervalDays: 31 });
   });
 
   it("calculates emergency reserve contribution", () => {

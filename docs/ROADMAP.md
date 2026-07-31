@@ -70,3 +70,10 @@
 - [ ] Sincronização real conferida contra os bancos.
 - [ ] Runbook de incidente revisado.
 - [ ] Segredos rotacionados e separados por ambiente.
+## Entrega 30/07/2026
+
+- [x] Limite ocupado e disponível com prioridade para dados oficiais da Pluggy.
+- [x] Faturas Pluggy com pagamentos, encargos, mínimo e status.
+- [x] Tela detalhada de cartões com fallback para conectores sem produto Bills.
+- [x] Tela dedicada de gastos e rendas recorrentes com critérios auditáveis.
+- [ ] Rodar a migration `202607300004_pluggy_credit_details.sql` no projeto Supabase.

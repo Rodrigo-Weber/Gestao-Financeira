@@ -243,3 +243,8 @@ Execute consultas administrativas somente em ambiente seguro. Não compartilhe r
 - [ ] IDs externos rejeitam duplicidade.
 - [ ] Audit log recebe alterações.
 - [ ] Aplicação carrega sem erros de coluna ausente.
+## 13. Atualização Pluggy: limites e faturas
+
+A migration `202607300004_pluggy_credit_details.sql` adiciona `credit_cards.used_limit` e `credit_cards.metadata`, além dos campos oficiais de faturas em `card_invoices` (`minimum_payment`, `paid_amount`, `payments`, `finance_charges`, `allows_installments` e `currency_code`). A coluna `closing_date` passa a aceitar nulo porque a Pluggy documenta esse campo como opcional.
+
+Execute a migration após `202607300003_financial_health.sql`. A Function de sincronização mantém os filtros por `user_id`, `connection_id` e `external_provider`, faz upsert idempotente por ID externo e limpa apenas faturas que deixaram de ser retornadas para aquela conexão.

@@ -12,6 +12,7 @@ import { ChatPanel, type SuggestedChanges } from "./components/ChatPanel";
 import { QuickAddModal } from "./components/QuickAddModal";
 import { EntityModal, type EntityKind, type EntityPayload } from "./components/EntityModal";
 import { SettingsPage } from "./components/SettingsPage";
+import { RecurringPage } from "./components/RecurringPage";
 import { TransactionDeleteModal, TransactionEditModal, type TransactionEditValues } from "./components/TransactionActionModals";
 import type { AssetInput, FundInput, GoalInput } from "./components/FinancialHealthPages";
 import { PeriodSelector, type PeriodMode } from "./components/PeriodSelector";
@@ -21,7 +22,7 @@ import { apiFetch } from "./lib/api";
 import { isSupabaseConfigured, supabase } from "./lib/supabase";
 import type { Account, FinanceData, Transaction, TransactionDraft } from "./types";
 
-type Page = "today" | "dashboard" | "planning" | "patrimony" | "transactions" | "accounts" | "cards" | "debts" | "reports" | "settings";
+type Page = "today" | "dashboard" | "planning" | "patrimony" | "transactions" | "recurring" | "accounts" | "cards" | "debts" | "reports" | "settings";
 const ReportsPage = lazy(() => import("./components/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const TodayPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.TodayPage })));
 const PlanningPage = lazy(() => import("./components/FinancialHealthPages").then((module) => ({ default: module.PlanningPage })));
@@ -32,6 +33,7 @@ const nav = [
   { id: "dashboard" as Page, label: "Visão geral", icon: LayoutDashboard, group: "Dia a dia" },
   { id: "transactions" as Page, label: "Transações", icon: ReceiptText, group: "Dia a dia" },
   { id: "planning" as Page, label: "Planejar", icon: Target, group: "Planejamento" },
+  { id: "recurring" as Page, label: "Recorrentes", icon: ReceiptText, group: "Planejamento" },
   { id: "patrimony" as Page, label: "Patrimônio", icon: ChartNoAxesCombined, group: "Planejamento" },
   { id: "accounts" as Page, label: "Contas", icon: WalletCards, group: "Gestão" },
   { id: "cards" as Page, label: "Cartões", icon: CreditCard, group: "Gestão" },
@@ -91,11 +93,12 @@ export default function App() {
   async function loadFinanceData() {
     if (!supabase) return;
     setLoadingData(true);
-    const [accounts, categories, transactions, cards, debts, budgets, profile, investments, goals, annualFunds, assets, snapshots] = await Promise.all([
+    const [accounts, categories, transactions, cards, cardInvoices, debts, budgets, profile, investments, goals, annualFunds, assets, snapshots] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("categories").select("*").order("name"),
       supabase.from("transactions").select("*").order("due_date", { ascending: false }),
       supabase.from("credit_cards").select("*").order("created_at"),
+      supabase.from("card_invoices").select("*").order("due_date", { ascending: false }),
       supabase.from("debts").select("*").eq("active", true).order("created_at"),
       supabase.from("budgets").select("*").order("month", { ascending: false }),
       supabase.from("profiles").select("display_name").eq("id", session!.user.id).maybeSingle(),
@@ -105,13 +108,14 @@ export default function App() {
       supabase.from("financial_assets").select("*").eq("active", true).order("value", { ascending: false }),
       supabase.from("financial_snapshots").select("*").order("reference_month"),
     ]);
-    const error = [accounts, categories, transactions, cards, debts, budgets, profile].find((result) => result.error)?.error;
+    const error = [accounts, categories, transactions, cards, cardInvoices, debts, budgets, profile].find((result) => result.error)?.error;
     if (error) { showToast("Não foi possível carregar os dados. Confira a migração do Supabase."); setLoadingData(false); return; }
     setData({
       accounts: (accounts.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, initialBalance: Number(item.initial_balance), color: item.color, active: item.active })),
       categories: (categories.data ?? []).map((item) => ({ id: item.id, name: item.name, icon: item.icon, color: item.color, kind: item.kind, spendingClass: item.spending_class ?? undefined, incomeClass: item.income_class ?? undefined })),
       transactions: (transactions.data ?? []).map(fromDbTransaction),
-      cards: (cards.data ?? []).map((item) => ({ id: item.id, name: item.name, brand: item.brand ?? "", lastDigits: item.last_digits ?? "", limit: Number(item.credit_limit), closingDay: item.closing_day, dueDay: item.due_day, color: item.color })),
+      cards: (cards.data ?? []).map((item) => ({ id: item.id, name: item.name, brand: item.brand ?? "", lastDigits: item.last_digits ?? "", limit: Number(item.credit_limit), availableLimit: item.available_limit == null ? undefined : Number(item.available_limit), usedLimit: item.used_limit == null ? undefined : Number(item.used_limit), reportedBalance: item.reported_balance == null ? undefined : Number(item.reported_balance), minimumPayment: item.metadata?.minimumPayment == null ? undefined : Number(item.metadata.minimumPayment), isLimitFlexible: item.metadata?.isLimitFlexible ?? undefined, status: item.active ? (item.metadata?.status ?? "ACTIVE") : "CANCELLED", level: item.metadata?.level ?? undefined, holderType: item.metadata?.holderType ?? undefined, lastSyncedAt: item.reported_balance_at ?? item.imported_at ?? undefined, closingDay: item.closing_day, dueDay: item.due_day, color: item.color })),
+      cardInvoices: (cardInvoices.data ?? []).map((item) => ({ id: item.id, cardId: item.card_id, referenceMonth: item.reference_month, closingDate: item.closing_date ?? undefined, dueDate: item.due_date, status: item.status, total: Number(item.total), minimumPayment: item.minimum_payment == null ? undefined : Number(item.minimum_payment), paidAmount: Number(item.paid_amount ?? 0), allowsInstallments: item.allows_installments ?? undefined, currencyCode: item.currency_code ?? "BRL", source: item.external_provider === "pluggy" ? "pluggy" : "manual" })),
       debts: (debts.data ?? []).map((item) => ({ id: item.id, name: item.name, creditor: item.creditor, type: item.type, originalAmount: Number(item.original_amount), outstandingBalance: Number(item.outstanding_balance), monthlyInterest: Number(item.monthly_interest), minimumPayment: Number(item.minimum_payment), dueDay: item.due_day, annualCet: item.annual_cet == null ? undefined : Number(item.annual_cet), totalInstallments: item.total_installments ?? undefined, paidInstallments: item.paid_installments ?? undefined, remainingInstallments: item.remaining_installments ?? undefined, contractEndDate: item.contract_end_date ?? undefined, source: item.source ?? "manual" })),
       budgets: (budgets.data ?? []).map((item) => ({ id: item.id, categoryId: item.category_id, month: item.month, limit: Number(item.spending_limit) })),
       investments: (investments.data ?? []).map((item) => ({ id: item.id, name: item.name, institution: item.institution ?? "", type: item.type, balance: Number(item.balance), quantity: item.quantity == null ? undefined : Number(item.quantity), unitValue: item.unit_value == null ? undefined : Number(item.unit_value), annualRate: item.annual_rate == null ? undefined : Number(item.annual_rate), dueDate: item.due_date ?? undefined, subtype: item.metadata?.subtype ?? undefined, status: item.metadata?.status ?? undefined, amountProfit: item.metadata?.amountProfit == null ? undefined : Number(item.metadata.amountProfit) })),
@@ -527,6 +531,7 @@ export default function App() {
         {page === "today" && <Suspense fallback={<div className="route-loading">Preparando seu dia...</div>}><TodayPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onNavigate={(value) => setPage(value as Page)} /></Suspense>}
         {page === "dashboard" && <Dashboard data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} userName={displayName} onAdd={() => { setDraft(null); setAddOpen(true); }} onNavigate={(value) => setPage(value as Page)} />}
         {page === "planning" && <Suspense fallback={<div className="route-loading">Calculando seu plano...</div>}><PlanningPage data={data} month={new Date(`${selectedMonth}-01T12:00:00`)} onAddGoal={addGoal} onAddFund={addAnnualFund} /></Suspense>}
+        {page === "recurring" && <RecurringPage data={data} />}
         {page === "patrimony" && <Suspense fallback={<div className="route-loading">Consolidando patrimônio...</div>}><PatrimonyPage data={data} onAddAsset={addAsset} /></Suspense>}
         {page === "transactions" && <TransactionsPage data={data} month={selectedMonth} range={periodMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined} onAdd={() => { setDraft(null); setAddOpen(true); }} onMarkPaid={markPaid} onEdit={(item) => openTransactionEdit(item)} onDelete={setDeletingTransaction} />}
         {page === "accounts" && <AccountsPage data={data} onAdd={() => setEntityModal("account")} onAdjust={setAdjustingAccount} />}

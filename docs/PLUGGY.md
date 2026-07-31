@@ -220,3 +220,18 @@ Não edite o `Item ID` diretamente no banco. O fluxo de substituição valida o 
 - O histórico de execução registra sucesso, falha e contadores.
 
 Consulte também [Segurança](SECURITY.md).
+## 13. Cartões, limites e faturas (atualizado em 30/07/2026)
+
+O limite exibido pela tela **Cartões** segue esta prioridade: linha consolidada de `creditData.disaggregatedCreditLimits` (`usedAmount`, `availableAmount` e `limitAmount`); depois os campos de `creditData`; por fim, o cálculo local das compras conhecidas apenas como fallback para cartões manuais ou conectores incompletos. Isso evita confundir compras do mês com limite comprometido por faturas anteriores ou parcelas futuras. Consulte [Account](https://docs.pluggy.ai/docs/accounts).
+
+Quando disponível, a sincronização consulta `GET /bills?accountId=...` e grava faturas, pagamentos, encargos, valor mínimo e vencimento em `card_invoices`. Conectores sem esse produto não interrompem o restante da sincronização. Referências: [Credit Card Bills](https://docs.pluggy.ai/docs/credit-card-bills) e [Bills List](https://docs.pluggy.ai/reference/bills-list).
+
+## 14. Transações e recorrências
+
+Transações usam a paginação cursor-based de `GET /v2/transactions`. `PENDING` representa faturas abertas ou parcelas futuras e não deve ser tratado como dinheiro liquidado. Referência: [Transaction](https://docs.pluggy.ai/docs/transactions) e [List by Cursor](https://docs.pluggy.ai/reference/transactions-list-by-cursor).
+
+A tela **Recorrentes** usa dados locais e aplica os critérios descritos pela Pluggy: pelo menos três ocorrências, intervalo mensal aproximado (25–35 dias), variação de valor de até 10% e índice de regularidade. Ela não depende do recurso premium. Referência: [Recurring Payments Analysis](https://docs.pluggy.ai/docs/recurring-payments-1).
+
+## 15. Migration necessária
+
+Execute `supabase/migrations/202607300004_pluggy_credit_details.sql` após as migrations anteriores. Ela adiciona metadados de limite e campos de fatura de forma aditiva, sem apagar dados existentes.
